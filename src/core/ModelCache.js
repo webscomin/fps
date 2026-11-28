@@ -586,14 +586,14 @@ export function initAllModels() {
   const ghostPath = (CONFIG.enemies.robot && CONFIG.enemies.robot.model && CONFIG.enemies.robot.model.path) || "/models/ghost.glb";
   const reaperPath = (CONFIG.enemies.reaper && CONFIG.enemies.reaper.model && CONFIG.enemies.reaper.model.path) || "/models/reaper.glb";
   const barrelPath = "/models/barrel.glb";
-  const shotgunPath = "/models/shotgun.glb";
-  const ak47Path = "/models/ak47.glb";
-  const rocketPath = "/models/rocket.glb";
-  const ammoPath = "/models/ammo.glb";
-  const ammoShotgunPath = "/models/ammo_shotgun.glb";
-  const ammoRocketPath = "/models/ammo_rocket.glb";
-  const armsPath = "/models/arms_rig.glb";
-  const armsTexPath = "/models/arms_gloves_01.png";
+  const shotgunPath = "./models/shotgun.glb";
+  const ak47Path = "./models/ak47.glb";
+  const rocketPath = "./models/rocket.glb";
+  const ammoPath = "./models/ammo.glb";
+  const ammoShotgunPath = "./models/ammo_shotgun.glb";
+  const ammoRocketPath = "./models/ammo_rocket.glb";
+  const armsPath = "./models/arms_rig.glb";
+  const armsTexPath = "./models/arms_gloves_01.png";
 
   _initPromise = Promise.all([
     loadGltfModel("zombie", zombiePath).catch((err) => {
