@@ -585,7 +585,7 @@ export function initAllModels() {
   const zombiePath = (CONFIG.enemies.zombie.model && CONFIG.enemies.zombie.model.path) || "/models/zombie.glb";
   const ghostPath = (CONFIG.enemies.robot && CONFIG.enemies.robot.model && CONFIG.enemies.robot.model.path) || "/models/ghost.glb";
   const reaperPath = (CONFIG.enemies.reaper && CONFIG.enemies.reaper.model && CONFIG.enemies.reaper.model.path) || "/models/reaper.glb";
-  const barrelPath = "/models/barrel.glb";
+  const barrelPath = "./models/barrel.glb";
   const shotgunPath = "./models/shotgun.glb";
   const ak47Path = "./models/ak47.glb";
   const rocketPath = "./models/rocket.glb";
