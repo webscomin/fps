@@ -352,7 +352,7 @@ export const CONFIG = {
 
       // Визуальная 3D-модель (public/models/zombie.glb)
       model: {
-        path: "/models/zombie.glb",
+        path: "./models/zombie.glb",
         height: 2.0,                  // целевая высота модели (тело с головой под хитбокс)
         rawHeight: 1.85,               // базовая высота исходного SkinnedMesh в glb
         rotationY: 0,                  // поворот внутри группы (модель смотрит в +Z, yaw 0 = +Z)
@@ -473,7 +473,7 @@ export const CONFIG = {
 
       // Визуальная 3D-модель призрака (public/models/ghost.glb)
       model: {
-        path: "/models/ghost.glb",
+        path: "./models/ghost.glb",
         height: 1.6,             // целевая высота модели призрака (по умолчанию 1.6)
         rotationY: 0,            // поворот по Y (0 = лицом в +Z к игроку)
         offsetY: 0,              // вертикальное смещение относительно центра хитбокса
@@ -534,7 +534,7 @@ export const CONFIG = {
       strawColors: [0xcca033, 0xb8860b, 0xd4af37, 0x8b5a2b, 0x5c4033],
       bloodColor: 0xb8860b,     // частицы соломы вместо крови
       model: {
-        path: "/models/reaper.glb",
+        path: "./models/reaper.glb",
         height: 2.1,
         rawHeight: 1.1045,
         rotationY: 0,
