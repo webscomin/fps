@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FPS: Добивания и Зомби</title>
+  <link rel="stylesheet" href="/src/ui/style.css">
+</head>
+<body>
+
+  <div id="overlay">
+    <h1 id="title">Нажми, чтобы начать</h1>
+    <div id="seedContainer">
+      <label for="seedInput" id="seedLabel">СИД УРОВНЯ:</label>
+      <input id="seedInput" type="text" placeholder="Случайный (или введи свой)" autocomplete="off" spellcheck="false">
+      <button id="startBtn" type="button">ИГРАТЬ</button>
+    </div>
+    <div id="pauseSeedDisplay" style="display: none;"></div>
+    <div id="graphicsPanel">
+      <span class="graphicsLabel">ГРАФИКА:</span>
+      <button class="gfxBtn" id="gfxLow" type="button" data-quality="low">НИЗКОЕ</button>
+      <button class="gfxBtn" id="gfxMedium" type="button" data-quality="medium">СРЕДНЕЕ</button>
+      <button class="gfxBtn" id="gfxHigh" type="button" data-quality="high">ВЫСОКОЕ</button>
+    </div>
+    <div id="settingsPanel">
+      <div class="settingRow" id="styleRow">
+        <span class="settingLabel">СТИЛЬ:</span>
+        <button class="gfxBtn on" id="stylePsx" type="button" data-style="psx">PSX</button>
+        <button class="gfxBtn" id="styleCartoon" type="button" data-style="cartoon">КАРТУН</button>
+      </div>
+      <div class="settingRow" id="brightnessRow">
+        <label for="brightnessSlider" class="settingLabel">ЯРКОСТЬ:</label>
+        <input type="range" id="brightnessSlider" min="70" max="180" value="120">
+        <span id="brightnessVal">1.2</span>
+      </div>
+      <div class="settingRow" id="fovRow">
+        <label for="fovSlider" class="settingLabel">УГОЛ ОБЗОРА (FOV):</label>
+        <input type="range" id="fovSlider" min="70" max="100" value="77">
+        <span id="fovVal">77</span>
+      </div>
+      <div class="settingRow" id="resRow">
+        <span class="settingLabel">ЧЁТКОСТЬ:</span>
+        <button class="gfxBtn" id="res240" type="button" data-res="240">240</button>
+        <button class="gfxBtn on" id="res360" type="button" data-res="360">360</button>
+        <button class="gfxBtn" id="res480" type="button" data-res="480">480</button>
+        <button class="gfxBtn" id="resOff" type="button" data-res="off">ВЫКЛ</button>
+      </div>
+      <div class="settingRow" id="snapRow">
+        <span class="settingLabel">ДРОЖАНИЕ PS1:</span>
+        <button class="gfxBtn" id="snapOff" type="button" data-snap="0">ВЫКЛ</button>
+        <button class="gfxBtn on" id="snapLow" type="button" data-snap="1">СЛАБО</button>
+        <button class="gfxBtn" id="snapHigh" type="button" data-snap="2">СИЛЬНО</button>
+      </div>
+      <div class="settingRow" id="grainRow">
+        <span class="settingLabel">ЗЕРНИСТОСТЬ:</span>
+        <button class="gfxBtn on" id="grainOn" type="button" data-grain="on">ВКЛ</button>
+        <button class="gfxBtn" id="grainOff" type="button" data-grain="off">ВЫКЛ</button>
+      </div>
+      <div class="settingRow" id="flickerRow">
+        <span class="settingLabel">МИГАНИЕ ЛАМП:</span>
+        <button class="gfxBtn on" id="flickerOn" type="button" data-flicker="on">ВКЛ</button>
+        <button class="gfxBtn" id="flickerOff" type="button" data-flicker="off">ВЫКЛ</button>
+      </div>
+      <div class="settingRow">
+        <label for="volumeSlider" class="settingLabel">ГРОМКОСТЬ:</label>
+        <input type="range" id="volumeSlider" min="0" max="100" value="55">
+        <span id="volumeVal">55%</span>
+      </div>
+      <div class="settingRow">
+        <label for="reducedEffectsToggle" class="settingLabel">ОСЛАБИТЬ ЭФФЕКТЫ:</label>
+        <input type="checkbox" id="reducedEffectsToggle">
+      </div>
+    </div>
+    <p id="hint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> — движение &nbsp; <kbd>Пробел</kbd> — прыжок (двойной)<br>
+       <kbd>Shift</kbd> — рывок &nbsp; <kbd>E</kbd> — добить оглушённого &nbsp; <kbd>Esc</kbd> — пауза<br>
+       <kbd>ЛКМ</kbd> — огонь &nbsp; <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/колесо — оружие &nbsp; <kbd>R</kbd> — патроны &nbsp; <kbd>T</kbd> — зомби<br>
+       <kbd>F4</kbd> — миникарта &nbsp; <kbd>F5</kbd> — новый уровень</p>
+  </div>
+
+  <div id="deathScreen">
+    <h1>ТЫ ПОДОХ</h1>
+    <div class="stats" id="deathStats"></div>
+    <button id="restartBtn">Заново (R)</button>
+  </div>
+
+  <div id="levelStats">
+    <h2>УРОВЕНЬ ПРОЙДЕН</h2>
+    <div id="levelStatsBody"></div>
+  </div>
+
+  <div id="vignette"></div>
+  <div id="gloryVignette"></div>
+  <div id="pickupFlash"></div>
+  <div id="styleFlash"></div>
+  <div id="dashOverlay">
+    <div id="dashSpeedLines"></div>
+    <div id="dashFlash"></div>
+  </div>
+  <div id="dmgIndicator"><div id="dmgArc"></div></div>
+
+  <div id="hud">
+    <div id="centerTitle"></div>
+    <div id="crosshair">
+      <svg viewBox="0 0 44 44" aria-hidden="true">
+        <g class="ch-outline" fill="none" stroke-width="4" stroke-linecap="round" stroke-linejoin="miter">
+          <path d="M22 3 V18 M22 26 V41 M3 22 H18 M26 22 H41" />
+          <path d="M12 17 V12 H17 M27 12 H32 V17 M12 27 V32 H17 M27 32 H32 V27" />
+        </g>
+        <g class="ch-fill" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="miter">
+          <path d="M22 3 V18 M22 26 V41 M3 22 H18 M26 22 H41" />
+          <path d="M12 17 V12 H17 M27 12 H32 V17 M12 27 V32 H17 M27 32 H32 V27" />
+        </g>
+      </svg>
+    </div>
+    <div id="dash"><div class="label" id="dashLabel">Рывок готов</div><div class="track"><div id="dashFill"></div></div></div>
+    <div id="leftTopHud">
+      <canvas id="minimap" width="170" height="170"></canvas>
+      <div id="fps">FPS: --</div>
+    </div>
+
+    <div id="scoreBoard">
+      <div class="badge" id="seedBadge">SEED: --------</div>
+      <div class="badge" id="levelBadge">УРОВЕНЬ: 1</div>
+      <div class="badge" id="arenaBadge">АРЕНЫ: 0 / 0</div>
+      <div class="badge" id="waveBadge">ВОЛНА: —</div>
+      <div class="badge" id="killsBadge">УБИТО: 0 | ДОБИТО: 0</div>
+      <div class="badge" id="scoreBadge">СЧЁТ: 0</div>
+      <div id="styleContainer">
+        <div id="styleHeader">
+          <div id="styleRank">ПУСТО</div>
+          <div id="styleMult">x1.0</div>
+        </div>
+        <div id="styleTrack">
+          <div id="styleFill"></div>
+        </div>
+        <div id="styleBonuses"></div>
+      </div>
+    </div>
+
+    <div id="playerStats">
+      <div class="statBar">
+        <div class="statHead"><span>ЗДОРОВЬЕ</span><span class="statVal" id="hpVal">100</span></div>
+        <div class="barTrack"><div id="hpGhost"></div><div id="hpFill"></div></div>
+      </div>
+      <div class="statBar">
+        <div class="statHead"><span>БРОНЯ</span><span class="statVal" id="apVal">0</span></div>
+        <div class="barTrack"><div id="apFill"></div></div>
+      </div>
+    </div>
+
+    <div id="quoteBox"></div>
+    <div id="waveBanner"></div>
+    <div id="liftHint"><span id="liftArrow">▲</span><span>ИДИ К ЛИФТУ</span></div>
+
+    <div id="chRing"></div><div id="chDot"></div>
+    <div id="hit"><i style="--r:45deg"></i><i style="--r:135deg"></i><i style="--r:225deg"></i><i style="--r:315deg"></i></div>
+    <div id="wpn"><div id="wname"></div><div id="wammo"></div></div>
+    <div id="slots"></div>
+  </div>
+
+  <div id="perfPrompt">
+    <span id="perfText">Низкий FPS. Включить режим производительности?</span>
+    <button id="perfAccept" type="button">ВКЛЮЧИТЬ</button>
+    <button id="perfDismiss" type="button" aria-label="Закрыть">×</button>
+  </div>
+
+  <div id="debugPanel" style="display: none;"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,2539 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FPS: Добивания и Зомби</title>
+<style>
+  :root {
+    --ink: #1b1340; --yellow: #ffd23f; --pink: #ff4f8b; --cyan: #2ee6d6;
+    --red: #ff3366; --blue: #33a1fd; --green: #2ecc71; --orange: #ff7a1a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #8fd8ff;
+    font-family: "Trebuchet MS", "Verdana", sans-serif; user-select: none; }
+  canvas { display: block; }
+
+  #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 18px; cursor: pointer; z-index: 20; text-align: center;
+    background: radial-gradient(circle at 50% 40%, rgba(255,210,63,.9), rgba(255,79,139,.95)); color: var(--ink); }
+  #overlay.hidden { display: none; }
+  #overlay h1 { font-size: clamp(36px, 7vw, 84px); font-weight: 900; letter-spacing: 1px;
+    color: #fff; text-shadow: 5px 5px 0 var(--ink), -2px -2px 0 var(--ink), 2px -2px 0 var(--ink), -2px 2px 0 var(--ink); }
+  #overlay p { font-size: clamp(16px, 2vw, 22px); font-weight: 700; line-height: 1.6; max-width: 660px; padding: 0 16px; }
+  #overlay kbd { display: inline-block; background: #fff; border: 3px solid var(--ink); border-radius: 8px;
+    padding: 0 8px; box-shadow: 0 3px 0 var(--ink); font-family: inherit; }
+
+  #deathScreen { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center;
+    justify-content: center; gap: 20px; z-index: 25; text-align: center;
+    background: radial-gradient(circle, rgba(140, 10, 30, 0.9) 0%, rgba(20, 0, 5, 0.96) 100%); color: #fff; }
+  #deathScreen.active { display: flex; }
+  #deathScreen h1 { font-size: clamp(52px, 9vw, 110px); font-weight: 900; letter-spacing: 2px;
+    color: #ff3366; text-shadow: 6px 6px 0 var(--ink), -3px -3px 0 #000; animation: shakeDeath 0.35s infinite alternate; }
+  #deathScreen .stats { font-size: 24px; font-weight: 800; line-height: 1.8; text-shadow: 3px 3px 0 var(--ink); }
+  #restartBtn { background: var(--yellow); color: var(--ink); font-weight: 900; font-size: 24px;
+    padding: 14px 40px; border: 4px solid var(--ink); border-radius: 16px; cursor: pointer;
+    box-shadow: 0 6px 0 var(--ink); transition: transform 0.1s, box-shadow 0.1s; pointer-events: auto; }
+  #restartBtn:hover { transform: translateY(-3px); box-shadow: 0 9px 0 var(--ink); }
+  #restartBtn:active { transform: translateY(3px); box-shadow: 0 3px 0 var(--ink); }
+
+  @keyframes shakeDeath {
+    0% { transform: rotate(-1.5deg) scale(0.98); }
+    100% { transform: rotate(1.5deg) scale(1.02); }
+  }
+
+  /* Виньетки: урона, низкого HP, добивания и предметов */
+  #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 12; opacity: 0;
+    box-shadow: inset 0 0 110px 40px rgba(230, 20, 50, 0.85); transition: opacity 0.12s ease-out; }
+  #vignette.low-hp { animation: pulseVignette 1.2s infinite ease-in-out; }
+  @keyframes pulseVignette {
+    0%, 100% { opacity: 0.28; }
+    50% { opacity: 0.68; }
+  }
+
+  #gloryVignette { position: fixed; inset: 0; pointer-events: none; z-index: 13; opacity: 0;
+    background: radial-gradient(circle, transparent 40%, rgba(255, 122, 26, 0.45) 85%, rgba(255, 42, 75, 0.8) 100%);
+    transition: opacity 0.15s ease-out; }
+
+  #pickupFlash { position: fixed; inset: 0; pointer-events: none; z-index: 13; opacity: 0; transition: opacity 0.15s ease-out; }
+  #pickupFlash.green { box-shadow: inset 0 0 100px 30px rgba(46, 204, 113, 0.8); }
+  #pickupFlash.blue { box-shadow: inset 0 0 100px 30px rgba(51, 161, 253, 0.8); }
+
+  /* Индикатор направления урона */
+  #dmgIndicator { position: fixed; left: 50%; top: 50%; width: 240px; height: 240px;
+    transform: translate(-50%, -50%); pointer-events: none; z-index: 14; opacity: 0; }
+  #dmgArc { width: 100%; height: 100%; border-radius: 50%; border: 9px solid transparent;
+    border-top: 9px solid #ff2a4b; filter: drop-shadow(0 0 10px #ff2a4b); transform: rotate(0deg); }
+
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+  #crosshair { position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; transform: translate(-50%,-50%); }
+  #crosshair::before, #crosshair::after { content: ""; position: absolute; background: #fff;
+    box-shadow: 0 0 0 2px var(--ink); border-radius: 2px; }
+  #crosshair::before { left: 50%; top: 0; width: 4px; height: 100%; transform: translateX(-50%); clip-path: polygon(0 0,100% 0,100% 38%,0 38%,0 62%,100% 62%,100% 100%,0 100%); }
+  #crosshair::after { top: 50%; left: 0; height: 4px; width: 100%; transform: translateY(-50%); clip-path: polygon(0 0,38% 0,38% 100%,0 100%,62% 0,100% 0,100% 100%,62% 100%); }
+
+  #dash { position: absolute; left: 50%; bottom: 36px; transform: translateX(-50%); width: 260px; }
+  #dash .label { color: #fff; font-weight: 900; font-size: 15px; margin-bottom: 4px;
+    text-shadow: 2px 2px 0 var(--ink), -1px -1px 0 var(--ink), 1px -1px 0 var(--ink), -1px 1px 0 var(--ink); }
+  #dash .track { height: 18px; background: rgba(27,19,64,.75); border: 3px solid var(--ink); border-radius: 12px; overflow: hidden; }
+  #dashFill { height: 100%; width: 100%; background: var(--cyan); border-radius: 8px; }
+  #dash.charging #dashFill { background: var(--pink); }
+
+  #fps { position: absolute; top: 14px; left: 14px; padding: 4px 12px; border: 3px solid var(--ink);
+    border-radius: 12px; background: var(--yellow); color: var(--ink); font-weight: 900; font-size: 16px; box-shadow: 0 3px 0 var(--ink); }
+
+  /* Верхний правый угол: волна, убийства, добивания, счёт */
+  #scoreBoard { position: absolute; top: 14px; right: 18px; display: flex; flex-direction: column;
+    align-items: flex-end; gap: 6px; }
+  .badge { padding: 4px 14px; border: 3px solid var(--ink); border-radius: 12px;
+    font-weight: 900; font-size: 15px; box-shadow: 0 3px 0 var(--ink); color: #fff; }
+  #waveBadge { background: var(--pink); }
+  #killsBadge { background: #7c5cff; }
+  #scoreBadge { background: var(--orange); }
+
+  /* Здоровье и Броня игрока */
+  #playerStats { position: absolute; left: 24px; bottom: 24px; width: 250px; display: flex;
+    flex-direction: column; gap: 8px; }
+  .statBar { display: flex; flex-direction: column; gap: 2px; }
+  .statHead { display: flex; justify-content: space-between; align-items: baseline; color: #fff;
+    font-weight: 900; font-size: 14px; text-shadow: 2px 2px 0 var(--ink), -1px -1px 0 var(--ink); }
+  .statVal { font-size: 26px; line-height: 1; }
+  .barTrack { height: 16px; background: rgba(27,19,64,.85); border: 3px solid var(--ink); border-radius: 10px; overflow: hidden; }
+  #hpFill { height: 100%; width: 100%; background: var(--red); border-radius: 6px; transition: width 0.08s linear; }
+  #apFill { height: 100%; width: 0%; background: var(--blue); border-radius: 6px; transition: width 0.08s linear; }
+
+  /* Реплики Васи */
+  #quoteBox { position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%);
+    background: #fff; border: 3px solid var(--ink); border-radius: 14px; padding: 6px 18px;
+    color: var(--ink); font-weight: 900; font-size: 16px; box-shadow: 0 4px 0 var(--ink);
+    opacity: 0; transition: opacity 0.2s, transform 0.2s; pointer-events: none; white-space: nowrap; }
+  #quoteBox.show { opacity: 1; transform: translateX(-50%) translateY(-6px); }
+
+  #chRing, #chDot { position: absolute; left: 50%; top: 50%; border-radius: 50%; display: none; }
+  #chRing { width: 42px; height: 42px; margin: -21px 0 0 -21px; border: 3px solid #fff; box-shadow: 0 0 0 2px var(--ink), inset 0 0 0 2px var(--ink); }
+  #chDot { width: 10px; height: 10px; margin: -5px 0 0 -5px; background: #fff; box-shadow: 0 0 0 2.5px var(--ink); }
+  #hit { position: absolute; left: 50%; top: 50%; width: 0; height: 0; opacity: 0; }
+  #hit i { position: absolute; left: -5px; top: -1.5px; width: 10px; height: 3px; background: #fff;
+    box-shadow: 0 0 0 1.5px var(--ink); transform: rotate(var(--r)) translateX(16px); }
+  #hit.kill i { background: #ff2a2a; }
+  #wpn { position: absolute; right: 28px; bottom: 26px; text-align: right; color: #fff; font-weight: 900;
+    text-shadow: 3px 3px 0 var(--ink), -1px -1px 0 var(--ink), 1px -1px 0 var(--ink), -1px 1px 0 var(--ink); }
+  #wname { font-size: 20px; }
+  #wammo { font-size: 58px; line-height: 1; }
+  #wammo small { font-size: 24px; opacity: .85; }
+  #slots { position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%); display: flex; gap: 8px; }
+  .slot { min-width: 58px; padding: 1px 8px; border: 3px solid var(--ink); border-radius: 10px; background: rgba(27,19,64,.7);
+    color: #fff; font-weight: 900; font-size: 14px; text-align: center; }
+  .slot.on { background: var(--yellow); color: var(--ink); transform: translateY(-4px); box-shadow: 0 3px 0 var(--ink); }
+
+  /* Уведомление о новой волне */
+  #waveBanner { position: absolute; left: 50%; top: 26%; transform: translate(-50%, -50%) scale(0.8);
+    font-size: 40px; font-weight: 900; color: #fff; text-shadow: 4px 4px 0 var(--ink), -2px -2px 0 var(--ink);
+    opacity: 0; transition: all 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28); pointer-events: none; }
+  #waveBanner.show { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+</style>
+</head>
+<body>
+
+<div id="overlay">
+  <h1 id="title">Нажми, чтобы начать</h1>
+  <p id="hint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> — движение &nbsp; <kbd>Пробел</kbd> — прыжок (в воздухе — двойной)<br>
+     <kbd>Shift</kbd> — рывок &nbsp; <kbd>E</kbd> — добить оглушённого &nbsp; <kbd>Esc</kbd> — пауза<br>
+     <kbd>ЛКМ</kbd> — огонь &nbsp; <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/колесо — оружие &nbsp; <kbd>R</kbd> — патроны &nbsp; <kbd>T</kbd> — зомби</p>
+</div>
+
+<div id="deathScreen">
+  <h1>ТЫ ПОДОХ</h1>
+  <div class="stats" id="deathStats"></div>
+  <button id="restartBtn">Заново (R)</button>
+</div>
+
+<div id="vignette"></div>
+<div id="gloryVignette"></div>
+<div id="pickupFlash"></div>
+<div id="dmgIndicator"><div id="dmgArc"></div></div>
+
+<div id="hud">
+  <div id="crosshair"></div>
+  <div id="dash"><div class="label" id="dashLabel">Рывок готов</div><div class="track"><div id="dashFill"></div></div></div>
+  <div id="fps">FPS: --</div>
+
+  <div id="scoreBoard">
+    <div class="badge" id="waveBadge">ВОЛНА: 1</div>
+    <div class="badge" id="killsBadge">УБИТО: 0 | ДОБИТО: 0</div>
+    <div class="badge" id="scoreBadge">СЧЁТ: 0</div>
+  </div>
+
+  <div id="playerStats">
+    <div class="statBar">
+      <div class="statHead"><span>ЗДОРОВЬЕ</span><span class="statVal" id="hpVal">100</span></div>
+      <div class="barTrack"><div id="hpFill"></div></div>
+    </div>
+    <div class="statBar">
+      <div class="statHead"><span>БРОНЯ</span><span class="statVal" id="apVal">0</span></div>
+      <div class="barTrack"><div id="apFill"></div></div>
+    </div>
+  </div>
+
+  <div id="quoteBox"></div>
+  <div id="waveBanner"></div>
+
+  <div id="chRing"></div><div id="chDot"></div>
+  <div id="hit"><i style="--r:45deg"></i><i style="--r:135deg"></i><i style="--r:225deg"></i><i style="--r:315deg"></i></div>
+  <div id="wpn"><div id="wname"></div><div id="wammo"></div></div>
+  <div id="slots"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
+
+/* ===================== ПАРАМЕТРЫ (CONFIG) ===================== */
+const CONFIG = {
+  // Мир
+  roomSize: 40,
+  wallHeight: 10,
+  wallThickness: 2,
+
+  // Игрок
+  player: {
+    health: 100,
+    maxHealth: 100,
+    armor: 0,
+    maxArmor: 100,
+    radius: 0.4,
+    height: 1.8,
+    eyeHeight: 1.62,
+    spawn: { x: 0, z: 15 },
+    invulnTime: 0.2
+  },
+
+  // Движение
+  moveSpeed: 14,
+  groundAccel: 160,
+  airAccel: 70,
+  gravity: 42,
+  jumpHeight: 2.2,
+  maxJumps: 2,
+  maxFallSpeed: 55,
+
+  // Рывок
+  dashSpeed: 40,
+  dashDuration: 0.17,
+  dashCooldown: 1.5,
+
+  // Камера
+  fov: 85,
+  dashFov: 108,
+  gloryFov: 74,
+  fovLerp: 14,
+  mouseSensitivity: 0.0022,
+
+  // Враги
+  enemies: {
+    meleeMaxHeightDiff: 1.3,
+    zombie: {
+      health: 60,
+      speed: 4.5,
+      speedVar: 0.15,
+      damage: 12,
+      attackRange: 1.6,
+      attackCooldown: 0.9,
+      attackWindup: 0.35,
+      scoreValue: 100,
+      headshotBonus: 50,
+      aggroRange: 35,
+      alertRadius: 20,
+      staggerTime: 0.18
+    }
+  },
+
+  // Добивания (Glory Kills)
+  glory: {
+    stunThreshold: 0.25,   // порог оглушения (< 25% HP)
+    stunDuration: 6.0,     // длительность оглушения (с)
+    range: 4.5,            // макс. дистанция для начала добивания
+    angle: 45,             // конус взгляда (градусы)
+    duration: 0.9,         // общая длительность добивания (с)
+    dashDuration: 0.15,    // быстрый подлёт к врагу (с)
+    timeScale: 0.3,        // замедление времени
+    score: 200             // очки за добивание
+  },
+
+  // Выпадение предметов
+  drops: {
+    normalAmmoChance: 0.20,
+    normalHpChance: 0.10,
+    stunnedKillChance: 0.35,
+    gloryMedkits: 2,
+    gloryAmmo: 1,
+    gloryArmorChance: 0.40
+  },
+
+  // Подбираемые предметы
+  pickups: {
+    medkitHp: 25,
+    armorAp: 25,
+    shotgunAmmo: 8,
+    plasmaAmmo: 50,
+    rocketAmmo: 4,
+    pickupRadius: 1.2,
+    magnetRadius: 4.0,
+    life: 20.0,
+    maxActive: 40
+  },
+
+  // Кровь и эффекты
+  blood: {
+    zombieColor: 0x38b000,
+    humanColor: 0xff3366,
+    maxParticles: 400,
+    maxDecals: 80,
+    maxGibs: 60
+  },
+
+  combat: {
+    switchDelay: 0.08,
+    targetHp: 100,
+    targetRespawn: 4,
+    decalLife: 15
+  },
+
+  // Оружие
+  weapons: {
+    shotgun: { name: "Дробовик", pellets: 10, spread: 4, damage: 8, range: 40, falloffStart: 15, falloffMin: 0.4,
+               cooldown: 0.8, ammo: 12, maxAmmo: 40, recoil: 3, shake: 0.012, shakeTime: 0.15, kickBack: 1, airPush: 4, pushEnemy: 10 },
+    plasma:  { name: "Плазмомёт", damage: 10, cooldown: 0.1, spread: 1, ammo: 150, maxAmmo: 300,
+               projSpeed: 60, projRadius: 0.12, life: 2, recoil: 0.25, shake: 0.002, shakeTime: 0.05, kickBack: 0.25, pushEnemy: 3 },
+    rocket:  { name: "Ракетница", damage: 100, cooldown: 1.1, ammo: 12, maxAmmo: 24, projSpeed: 35, projRadius: 0.15, life: 4,
+               explosionRadius: 6, explosionDamage: 100, jumpForce: 30, recoil: 5, shake: 0.03, shakeTime: 0.25, kickBack: 2, pushEnemy: 26 }
+  },
+
+  // Реплики Васи
+  quotes: {
+    killQuotes: [
+      "Минус один упырь!",
+      "Не стой на линии огня, плесень!",
+      "Оп, и в фарш!",
+      "Халат испачкал, растяпа!",
+      "Анатомический театр закрывается!",
+      "Лови маслину, чучело!"
+    ],
+    damageQuotes: [
+      "Ах ты гнида кусачая!",
+      "Зубы выбью, зомбятина!",
+      "Халат свой грязный убери!",
+      "Больно же, тварь!",
+      "Руки коротки меня жрать!",
+      "Ща добавки получишь!"
+    ],
+    lowHealthQuotes: [
+      "Так, Вася, соберись, не подыхать же тут!",
+      "Кажись, шкурку попортили...",
+      "Не дождётесь, гады!",
+      "Аптечку бы... или хотя бы бинт!",
+      "В глазах темнеет, но ствол ещё в руке!",
+      "Только через мой труп... стоп, нет!"
+    ]
+  }
+};
+
+/* ===================== МИР ===================== */
+class World {
+  constructor(scene) {
+    this.scene = scene;
+    this.boxes = [];
+    this.build();
+  }
+
+  addBox(x, z, w, h, d, color, y = 0, visible = true) {
+    const min = new THREE.Vector3(x - w / 2, y, z - d / 2);
+    const max = new THREE.Vector3(x + w / 2, y + h, z + d / 2);
+    this.boxes.push({ min, max });
+    if (!visible) return;
+    const geo = new THREE.BoxGeometry(w, h, d);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color }));
+    mesh.position.set(x, y + h / 2, z);
+    this.scene.add(mesh);
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo),
+      new THREE.LineBasicMaterial({ color: 0x1b1340 }));
+    edges.position.copy(mesh.position);
+    this.scene.add(edges);
+  }
+
+  floorTexture() {
+    const c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const g = c.getContext("2d");
+    g.fillStyle = "#ffe066"; g.fillRect(0, 0, 128, 128);
+    g.fillStyle = "#6ee7c8"; g.fillRect(0, 0, 64, 64); g.fillRect(64, 64, 64, 64);
+    g.strokeStyle = "#1b1340"; g.lineWidth = 4; g.strokeRect(2, 2, 124, 124);
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(CONFIG.roomSize / 4, CONFIG.roomSize / 4);
+    t.anisotropy = 4;
+    return t;
+  }
+
+  build() {
+    const S = CONFIG.roomSize, H = CONFIG.wallHeight, T = CONFIG.wallThickness, half = S / 2;
+
+    this.scene.background = new THREE.Color(0x8fd8ff);
+    this.scene.fog = new THREE.Fog(0x8fd8ff, 35, 90);
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xffb4d6, 0.85));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.7);
+    sun.position.set(10, 25, 8);
+    this.scene.add(sun);
+
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(S, S),
+      new THREE.MeshLambertMaterial({ map: this.floorTexture() }));
+    floor.rotation.x = -Math.PI / 2;
+    this.scene.add(floor);
+
+    const wallColors = [0xff4f8b, 0x7c5cff, 0x2ee6d6, 0xff9f1c];
+    this.addBox(0, -half - T / 2, S + T * 2, H, T, wallColors[0]);
+    this.addBox(0,  half + T / 2, S + T * 2, H, T, wallColors[1]);
+    this.addBox(-half - T / 2, 0, T, H, S, wallColors[2]);
+    this.addBox( half + T / 2, 0, T, H, S, wallColors[3]);
+
+    // Препятствия
+    this.addBox(-10,  -8, 4,   1,   4,   0xff9f1c);
+    this.addBox( -4, -12, 4,   2,   4,   0x7c5cff);
+    this.addBox(  4, -12, 4,   3,   4,   0xff4f8b);
+    this.addBox( 12,  -8, 4,   4.5, 4,   0x2ee6d6);
+    this.addBox( 12,   2, 6,   1.5, 3,   0x8ae234);
+    this.addBox(-12,   6, 3,   2.5, 8,   0xffd23f);
+    this.addBox(  0,  -2, 6,   0.6, 6,   0x4da3ff);
+    this.addBox(  0,  -2, 2.5, 1.2, 2.5, 0xff4f8b, 0.6);
+    this.addBox(-16,  16, 1.5, 6,   1.5, 0x7c5cff);
+    this.addBox( 16,  16, 1.5, 6,   1.5, 0x7c5cff);
+  }
+}
+
+/* ===================== ИГРОК ===================== */
+class Player {
+  constructor(camera) {
+    this.camera = camera;
+    this.pos = new THREE.Vector3(CONFIG.player.spawn.x, 0, CONFIG.player.spawn.z);
+    this.vel = new THREE.Vector3();
+    this.yaw = 0; this.pitch = 0;
+    this.onGround = false;
+    this.jumpsUsed = 0;
+    this.jumpQueued = false;
+    this.dashQueued = false;
+    this.dashTimer = 0;
+    this.dashCd = 0;
+    this.dashDir = new THREE.Vector3();
+    this.recoil = 0; this.shakeT = 0; this.shakeDur = 0.1; this.shakeAmp = 0;
+    this.fov = CONFIG.fov;
+    this.jumpVel = Math.sqrt(2 * CONFIG.gravity * CONFIG.jumpHeight);
+    camera.rotation.order = "YXZ";
+
+    this.health = CONFIG.player.health;
+    this.maxHealth = CONFIG.player.maxHealth;
+    this.armor = CONFIG.player.armor;
+    this.maxArmor = CONFIG.player.maxArmor;
+    this.invulnT = 0;
+    this.isDead = false;
+    this.deathCamT = 0;
+    this.vignetteT = 0;
+
+    this.dmgIndicatorT = 0;
+    this.dmgSourcePos = new THREE.Vector3();
+  }
+
+  reset() {
+    this.pos.set(CONFIG.player.spawn.x, 0, CONFIG.player.spawn.z);
+    this.vel.set(0, 0, 0);
+    this.yaw = 0; this.pitch = 0;
+    this.health = CONFIG.player.maxHealth;
+    this.armor = CONFIG.player.armor;
+    this.invulnT = 0;
+    this.isDead = false;
+    this.deathCamT = 0;
+    this.vignetteT = 0;
+    this.dmgIndicatorT = 0;
+    this.dashCd = 0;
+    this.dashTimer = 0;
+    this.recoil = 0; this.shakeT = 0;
+    this.camera.rotation.set(0, 0, 0);
+  }
+
+  addShake(a, t) {
+    this.shakeAmp = Math.max(a, this.shakeAmp * Math.max(0, this.shakeT) / this.shakeDur);
+    this.shakeDur = t; this.shakeT = t;
+  }
+
+  look(dx, dy) {
+    if (this.isDead) return;
+    this.yaw -= dx * CONFIG.mouseSensitivity;
+    this.pitch -= dy * CONFIG.mouseSensitivity;
+    const lim = Math.PI / 2 - 0.01;
+    this.pitch = Math.max(-lim, Math.min(lim, this.pitch));
+  }
+
+  approach(target, maxDelta) {
+    const dx = target.x - this.vel.x, dz = target.z - this.vel.z;
+    const len = Math.hypot(dx, dz);
+    if (len <= maxDelta || len === 0) { this.vel.x = target.x; this.vel.z = target.z; }
+    else { this.vel.x += dx / len * maxDelta; this.vel.z += dz / len * maxDelta; }
+  }
+
+  takeDamage(amount, sourcePos, game) {
+    if (this.isDead || this.invulnT > 0 || game.combat.gloryActive) return;
+    this.invulnT = CONFIG.player.invulnTime;
+    this.vignetteT = 0.3;
+    this.addShake(0.045, 0.28);
+
+    const absorbed = Math.min(this.armor, amount * 0.66);
+    this.armor -= absorbed;
+    const directDmg = amount - absorbed;
+    this.health = Math.max(0, this.health - directDmg);
+
+    if (sourcePos) {
+      this.dmgIndicatorT = 0.65;
+      this.dmgSourcePos.copy(sourcePos);
+    }
+
+    if (this.health <= 0) {
+      this.die(game);
+    } else {
+      if (this.health < 25) game.sayQuote("lowHealth");
+      else game.sayQuote("damage");
+    }
+  }
+
+  die(game) {
+    if (this.isDead) return;
+    this.isDead = true;
+    this.health = 0;
+    game.onPlayerDeath();
+  }
+
+  update(dt, keys, world, isGloryLocked) {
+    const C = CONFIG;
+
+    if (this.isDead) {
+      this.deathCamT = Math.min(1, this.deathCamT + dt * 2.5);
+      const e = 1 - Math.pow(1 - this.deathCamT, 3);
+      this.pos.y = Math.max(0.25, this.pos.y - dt * 4.5);
+      this.camera.position.set(this.pos.x, this.pos.y, this.pos.z);
+      this.camera.rotation.set(0.18 + e * 0.2, this.yaw, e * 0.55);
+      return;
+    }
+
+    if (this.invulnT > 0) this.invulnT = Math.max(0, this.invulnT - dt);
+    if (this.vignetteT > 0) this.vignetteT = Math.max(0, this.vignetteT - dt);
+    if (this.dmgIndicatorT > 0) this.dmgIndicatorT = Math.max(0, this.dmgIndicatorT - dt);
+
+    if (isGloryLocked) {
+      this.camera.position.set(this.pos.x, this.pos.y + C.player.eyeHeight, this.pos.z);
+      return;
+    }
+
+    const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
+    const rx = Math.cos(this.yaw),  rz = -Math.sin(this.yaw);
+    let ix = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+    let iz = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
+    let wx = fx * iz + rx * ix, wz = fz * iz + rz * ix;
+    const wl = Math.hypot(wx, wz);
+    const hasInput = wl > 0;
+    if (hasInput) { wx /= wl; wz /= wl; }
+
+    this.dashCd = Math.max(0, this.dashCd - dt);
+
+    if (this.dashQueued && this.dashCd <= 0) {
+      this.dashDir.set(hasInput ? wx : fx, 0, hasInput ? wz : fz);
+      this.dashTimer = C.dashDuration;
+      this.dashCd = C.dashCooldown;
+      this.vel.y = Math.max(this.vel.y, 0) * 0.3;
+    }
+    this.dashQueued = false;
+
+    if (this.jumpQueued && this.jumpsUsed < C.maxJumps) {
+      this.vel.y = this.jumpVel;
+      this.jumpsUsed++;
+      this.onGround = false;
+    }
+    this.jumpQueued = false;
+
+    if (this.dashTimer > 0) {
+      this.dashTimer -= dt;
+      this.vel.x = this.dashDir.x * C.dashSpeed;
+      this.vel.z = this.dashDir.z * C.dashSpeed;
+    } else {
+      const accel = this.onGround ? C.groundAccel : C.airAccel;
+      this.approach({ x: wx * C.moveSpeed, z: wz * C.moveSpeed }, accel * dt);
+      this.vel.y = Math.max(this.vel.y - C.gravity * dt, -C.maxFallSpeed);
+    }
+
+    this.move(dt, world);
+
+    this.camera.position.set(this.pos.x, this.pos.y + C.player.eyeHeight, this.pos.z);
+    this.recoil *= Math.exp(-9 * dt);
+    let sx = 0, sy = 0;
+    if (this.shakeT > 0) {
+      this.shakeT -= dt;
+      const k = this.shakeAmp * Math.max(0, this.shakeT) / this.shakeDur;
+      sx = (Math.random() - 0.5) * k; sy = (Math.random() - 0.5) * k;
+    }
+    this.camera.rotation.set(this.pitch + this.recoil + sx, this.yaw + sy, 0);
+
+    let targetFov = C.fov;
+    if (this.dashTimer > 0) targetFov = C.dashFov;
+    this.fov += (targetFov - this.fov) * Math.min(1, C.fovLerp * dt);
+    if (Math.abs(this.camera.fov - this.fov) > 0.01) {
+      this.camera.fov = this.fov;
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
+  move(dt, world) {
+    const maxMove = Math.max(Math.abs(this.vel.x), Math.abs(this.vel.y), Math.abs(this.vel.z)) * dt;
+    const steps = Math.max(1, Math.ceil(maxMove / 0.2));
+    const sdt = dt / steps;
+    let grounded = false;
+    for (let i = 0; i < steps; i++) {
+      this.pos.x += this.vel.x * sdt; this.collide(world, "x");
+      this.pos.z += this.vel.z * sdt; this.collide(world, "z");
+      this.pos.y += this.vel.y * sdt;
+      if (this.collide(world, "y")) grounded = true;
+    }
+    this.onGround = grounded;
+    if (grounded) this.jumpsUsed = 0;
+  }
+
+  collide(world, axis) {
+    const r = CONFIG.player.radius, h = CONFIG.player.height, p = this.pos, v = this.vel;
+    const EPS = 0.0005;
+    let landed = false;
+
+    if (axis === "y" && p.y < 0) {
+      p.y = 0;
+      if (v.y < 0) { v.y = 0; landed = true; }
+    }
+
+    for (const b of world.boxes) {
+      if (p.x + r <= b.min.x || p.x - r >= b.max.x ||
+          p.z + r <= b.min.z || p.z - r >= b.max.z ||
+          p.y + h <= b.min.y || p.y >= b.max.y) continue;
+
+      if (axis === "x") {
+        p.x = v.x > 0 ? b.min.x - r - EPS : b.max.x + r + EPS;
+        v.x = 0;
+      } else if (axis === "z") {
+        p.z = v.z > 0 ? b.min.z - r - EPS : b.max.z + r + EPS;
+        v.z = 0;
+      } else {
+        if (v.y <= 0) { p.y = b.max.y; v.y = 0; landed = true; }
+        else { p.y = b.min.y - h - EPS; v.y = 0; }
+      }
+    }
+    return landed;
+  }
+}
+
+/* ===================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===================== */
+const EDGE_MAT = new THREE.LineBasicMaterial({ color: 0x1b1340 });
+const AX = ["x", "y", "z"];
+const rnd = (a = 1) => (Math.random() - 0.5) * 2 * a;
+
+function outlined(geo, mat, angle = 25) {
+  const m = new THREE.Mesh(geo, mat);
+  m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, angle), EDGE_MAT));
+  return m;
+}
+
+function rayAABB(o, d, min, max, r = 0) {
+  let t0 = 0, t1 = Infinity, ha = -1, hs = 0;
+  for (let i = 0; i < 3; i++) {
+    const k = AX[i], dv = d[k], ov = o[k], lo = min[k] - r, hi = max[k] + r;
+    if (Math.abs(dv) < 1e-9) { if (ov < lo || ov > hi) return null; continue; }
+    let a = (lo - ov) / dv, b = (hi - ov) / dv, sg = -1;
+    if (a > b) { const tmp = a; a = b; b = tmp; sg = 1; }
+    if (a > t0) { t0 = a; ha = i; hs = sg; }
+    if (b < t1) t1 = b;
+    if (t0 > t1) return null;
+  }
+  return ha < 0 ? null : { t: t0, a: ha, s: hs };
+}
+
+/* ---------- Эффекты: кровь, декали, взрывы, куски тел ---------- */
+class Fx {
+  constructor(scene) {
+    this.scene = scene;
+    const B = CONFIG.blood;
+
+    const pg = new THREE.IcosahedronGeometry(1, 0);
+    this.parts = []; this.pi = 0;
+    for (let i = 0; i < B.maxParticles; i++) {
+      const m = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      m.visible = false; scene.add(m);
+      this.parts.push({ m, v: new THREE.Vector3(), life: 0, max: 1, size: 0.1, grav: 0, drag: 0 });
+    }
+
+    const bloodTex = this.createSplatterTexture();
+    const dg = new THREE.PlaneGeometry(0.55, 0.55);
+    this.decals = []; this.di = 0;
+    for (let i = 0; i < B.maxDecals; i++) {
+      const m = new THREE.Mesh(dg, new THREE.MeshBasicMaterial({
+        map: bloodTex, transparent: true, opacity: 0.85, depthWrite: false,
+        polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3
+      }));
+      m.visible = false; scene.add(m); this.decals.push({ m, life: 0 });
+    }
+
+    const eg = new THREE.IcosahedronGeometry(1, 1);
+    this.expl = [];
+    for (let i = 0; i < 4; i++) {
+      const m = new THREE.Mesh(eg, new THREE.MeshBasicMaterial({ color: 0xff8a1f, transparent: true, depthWrite: false }));
+      m.visible = false; scene.add(m); this.expl.push({ m, t: 1 });
+    }
+    this.eLight = new THREE.PointLight(0xff8a2a, 0, 25); scene.add(this.eLight); this.eT = 1;
+
+    this.pops = []; this.pp = 0;
+    for (let i = 0; i < 20; i++) {
+      const cv = document.createElement("canvas"); cv.width = 160; cv.height = 70;
+      const tex = new THREE.CanvasTexture(cv);
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, fog: false }));
+      s.scale.set(1.5, 0.65, 1); s.visible = false; s.renderOrder = 999; scene.add(s);
+      this.pops.push({ s, cv, tex, life: 0, y0: 0 });
+    }
+
+    const bg = new THREE.BoxGeometry(1, 1, 1), be = new THREE.EdgesGeometry(bg);
+    const sg = new THREE.SphereGeometry(0.5, 8, 6), se = new THREE.EdgesGeometry(sg);
+    this.gibs = []; this.gi = 0;
+    for (let i = 0; i < B.maxGibs; i++) {
+      const isHead = i % 8 === 0;
+      const geo = isHead ? sg : bg;
+      const edgesGeo = isHead ? se : be;
+      const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0xffffff }));
+      m.add(new THREE.LineSegments(edgesGeo, EDGE_MAT));
+      m.visible = false; scene.add(m);
+      this.gibs.push({ m, v: new THREE.Vector3(), w: new THREE.Vector3(), life: 0, s: 0.25, isHead });
+    }
+  }
+
+  createSplatterTexture() {
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const g = c.getContext("2d");
+    g.clearRect(0, 0, 64, 64);
+    g.fillStyle = "#ffffff";
+    g.beginPath();
+    g.arc(32, 32, 18, 0, Math.PI * 2);
+    g.fill();
+    for (let i = 0; i < 7; i++) {
+      const ang = (i / 7) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+      const dist = 22 + Math.random() * 8;
+      const rad = 2.5 + Math.random() * 3.5;
+      g.beginPath();
+      g.arc(32 + Math.cos(ang) * dist, 32 + Math.sin(ang) * dist, rad, 0, Math.PI * 2);
+      g.fill();
+    }
+    return new THREE.CanvasTexture(c);
+  }
+
+  spawn(x, y, z, vx, vy, vz, color, size, life, grav = 0, drag = 0) {
+    const p = this.parts[this.pi]; this.pi = (this.pi + 1) % this.parts.length;
+    p.m.position.set(x, y, z); p.v.set(vx, vy, vz); p.m.material.color.setHex(color);
+    p.size = size; p.life = p.max = life; p.grav = grav; p.drag = drag;
+    p.m.scale.setScalar(size); p.m.visible = true;
+  }
+
+  bloodSpray(p, n, dmg, color) {
+    const count = 10 + Math.min(10, Math.floor(dmg / 6));
+    const clr = color || CONFIG.blood.zombieColor;
+    for (let i = 0; i < count; i++) {
+      this.spawn(
+        p.x, p.y, p.z,
+        n.x * (3 + Math.random() * 4) + rnd(3.5),
+        n.y * (3 + Math.random() * 4) + rnd(3.5) + 1.2,
+        n.z * (3 + Math.random() * 4) + rnd(3.5),
+        clr, 0.08 + Math.random() * 0.06, 0.4 + Math.random() * 0.35, 24, 0.8
+      );
+    }
+  }
+
+  sparks(p, n, color, count) {
+    for (let i = 0; i < count; i++)
+      this.spawn(p.x, p.y, p.z, n.x * 3 + rnd(3), n.y * 3 + rnd(3), n.z * 3 + rnd(3), color, 0.07, 0.25 + Math.random() * 0.2, 14);
+  }
+
+  decal(p, n, color, scale = 1) {
+    const d = this.decals[this.di]; this.di = (this.di + 1) % this.decals.length;
+    d.m.position.copy(p).addScaledVector(n, 0.014);
+    d.m.lookAt(p.x + n.x, p.y + n.y, p.z + n.z);
+    d.m.scale.setScalar(scale);
+    d.m.material.color.setHex(color || 0x1b1340);
+    d.life = CONFIG.combat.decalLife; d.m.visible = true;
+  }
+
+  explosion(p) {
+    const e = this.expl.find(q => q.t >= 1) || this.expl[0];
+    e.t = 0; e.m.position.copy(p); e.m.visible = true;
+    this.eLight.position.copy(p); this.eT = 0;
+    for (let i = 0; i < 12; i++)
+      this.spawn(p.x, p.y, p.z, rnd(7), rnd(7) + 2, rnd(7), i % 2 ? 0xffd23f : 0xff7a1a, 0.4, 0.45 + Math.random() * 0.2, -3, 1.5);
+    for (let i = 0; i < 13; i++)
+      this.spawn(p.x, p.y, p.z, rnd(3), rnd(3) + 1.5, rnd(3), 0x7d7aa0, 0.6, 0.9 + Math.random() * 0.4, -1, 1);
+  }
+
+  popup(x, y, z, val, isHeadshot = false) {
+    const q = this.pops[this.pp]; this.pp = (this.pp + 1) % this.pops.length;
+    const g = q.cv.getContext("2d");
+    g.clearRect(0, 0, 160, 70);
+    g.font = "900 44px Trebuchet MS, Verdana, sans-serif";
+    g.textAlign = "center"; g.textBaseline = "middle"; g.lineWidth = 8; g.lineJoin = "round";
+    g.strokeStyle = "#1b1340";
+
+    const text = isHeadshot ? val + " ХЕДШОТ!" : "" + val;
+    if (isHeadshot) g.font = "900 32px Trebuchet MS, Verdana, sans-serif";
+    g.strokeText(text, 80, 36);
+    g.fillStyle = isHeadshot ? "#ffd23f" : (val >= 50 ? "#ff4f8b" : "#ffffff");
+    g.fillText(text, 80, 36);
+
+    q.tex.needsUpdate = true;
+    q.y0 = y + rnd(0.12);
+    q.s.position.set(x + rnd(0.25), q.y0, z + rnd(0.25));
+    q.life = 0.7; q.s.material.opacity = 1; q.s.visible = true;
+  }
+
+  zombieGibs(pos, count, isHeadshot) {
+    const clrs = [0xffffff, 0x38b000, 0x228b22, 0xd0d0d0, 0x1b1340];
+    for (let i = 0; i < count; i++) {
+      const g = this.gibs[this.gi]; this.gi = (this.gi + 1) % this.gibs.length;
+      const isHead = (i === 0 && isHeadshot);
+      g.m.material.color.setHex(isHead ? 0x55aa44 : clrs[i % clrs.length]);
+      g.s = isHead ? 0.36 : (0.18 + Math.random() * 0.16);
+      g.m.scale.setScalar(g.s);
+      g.m.position.set(pos.x + rnd(0.3), pos.y + 0.6 + Math.random() * 1.1, pos.z + rnd(0.3));
+      g.v.set(rnd(6), 4 + Math.random() * 6, rnd(6));
+      g.w.set(rnd(12), rnd(12), rnd(12));
+      g.life = 6.0; g.m.visible = true;
+    }
+  }
+
+  update(dt) {
+    for (const p of this.parts) {
+      if (p.life <= 0) continue;
+      p.life -= dt;
+      if (p.life <= 0) { p.m.visible = false; continue; }
+      p.v.y -= p.grav * dt;
+      if (p.drag) p.v.multiplyScalar(Math.max(0, 1 - p.drag * dt));
+      p.m.position.addScaledVector(p.v, dt);
+      p.m.scale.setScalar(p.size * p.life / p.max);
+    }
+    for (const d of this.decals) {
+      if (d.life <= 0) continue;
+      d.life -= dt;
+      if (d.life <= 0) d.m.visible = false;
+      else d.m.material.opacity = 0.85 * Math.min(1, d.life / 2);
+    }
+    for (const e of this.expl) {
+      if (e.t >= 1) continue;
+      e.t += dt / 0.3;
+      const k = Math.min(1, e.t);
+      e.m.scale.setScalar(0.5 + CONFIG.weapons.rocket.explosionRadius * 0.8 * (1 - (1 - k) * (1 - k)));
+      e.m.material.opacity = 1 - k;
+      if (k >= 1) e.m.visible = false;
+    }
+    if (this.eT < 1) { this.eT += dt / 0.25; this.eLight.intensity = 6 * Math.max(0, 1 - this.eT); }
+    for (const q of this.pops) {
+      if (q.life <= 0) continue;
+      q.life -= dt;
+      if (q.life <= 0) { q.s.visible = false; continue; }
+      q.s.position.y = q.y0 + (1 - q.life / 0.7) * 1.25;
+      q.s.material.opacity = Math.min(1, q.life / 0.25);
+    }
+    for (const g of this.gibs) {
+      if (g.life <= 0) continue;
+      g.life -= dt;
+      if (g.life <= 0) { g.m.visible = false; continue; }
+      g.v.y -= 32 * dt;
+      g.m.position.addScaledVector(g.v, dt);
+
+      if (g.m.position.y < g.s / 2) {
+        g.m.position.y = g.s / 2;
+        if (Math.abs(g.v.y) > 2) {
+          this.decal(g.m.position, new THREE.Vector3(0, 1, 0), CONFIG.blood.zombieColor, 0.7 + Math.random() * 0.4);
+        }
+        g.v.y = Math.abs(g.v.y) * 0.42;
+        if (g.v.y < 0.8) g.v.y = 0;
+        g.v.x *= 0.75; g.v.z *= 0.75; g.w.multiplyScalar(0.75);
+      }
+      g.m.rotation.x += g.w.x * dt; g.m.rotation.y += g.w.y * dt; g.m.rotation.z += g.w.z * dt;
+      g.m.scale.setScalar(g.s * Math.min(1, g.life / 0.6));
+    }
+  }
+}
+
+/* ===================== ПОДБИРАЕМЫЕ ПРЕДМЕТЫ (PICKUP) ===================== */
+class Pickup {
+  constructor(scene, type, x, y, z, initialVel) {
+    this.scene = scene;
+    this.type = type; // medkit, armor, ammo_shotgun, ammo_plasma, ammo_rocket
+    this.pos = new THREE.Vector3(x, y, z);
+    this.vel = initialVel ? initialVel.clone() : new THREE.Vector3(rnd(1.4), 3.5 + Math.random() * 1.5, rnd(1.4));
+    this.groundY = y;
+    this.bounced = false;
+    this.hovering = false;
+    this.hoverBaseY = y + 0.35;
+    this.hoverT = Math.random() * 10;
+    this.life = CONFIG.pickups.life;
+    this.alive = true;
+
+    this.buildModel();
+  }
+
+  buildModel() {
+    this.mesh = new THREE.Group();
+    this.mesh.position.copy(this.pos);
+
+    const box = (w, h, d, color) => outlined(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color }));
+
+    if (this.type === "medkit") {
+      const b = box(0.38, 0.38, 0.38, 0xffffff);
+      const cross1 = box(0.12, 0.4, 0.4, 0xff3366);
+      const cross2 = box(0.4, 0.12, 0.4, 0xff3366);
+      this.mesh.add(b, cross1, cross2);
+    } else if (this.type === "armor") {
+      const shield = box(0.36, 0.46, 0.14, 0x33a1fd);
+      const core = box(0.2, 0.26, 0.16, 0xffffff);
+      this.mesh.add(shield, core);
+    } else if (this.type === "ammo_shotgun") {
+      const b = box(0.36, 0.28, 0.28, 0xffd23f);
+      const stripe = box(0.38, 0.1, 0.3, 0xff3366);
+      this.mesh.add(b, stripe);
+    } else if (this.type === "ammo_plasma") {
+      const b = box(0.32, 0.32, 0.32, 0x2ee6d6);
+      const core = outlined(new THREE.SphereGeometry(0.12, 8, 6), new THREE.MeshLambertMaterial({
+        color: 0x9ffcff, emissive: 0x2ee6d6, emissiveIntensity: 0.9
+      }));
+      this.mesh.add(b, core);
+    } else if (this.type === "ammo_rocket") {
+      const b = box(0.42, 0.25, 0.25, 0xff7a1a);
+      const tip = box(0.18, 0.27, 0.27, 0xff3366); tip.position.x = 0.14;
+      this.mesh.add(b, tip);
+    }
+
+    this.scene.add(this.mesh);
+  }
+
+  canPlayerCollect(player, game) {
+    if (this.type === "medkit") return player.health < player.maxHealth;
+    if (this.type === "armor") return player.armor < player.maxArmor;
+    if (this.type === "ammo_shotgun") return game.combat.weapons[0].ammo < game.combat.weapons[0].cfg.maxAmmo;
+    if (this.type === "ammo_plasma") return game.combat.weapons[1].ammo < game.combat.weapons[1].cfg.maxAmmo;
+    if (this.type === "ammo_rocket") return game.combat.weapons[2].ammo < game.combat.weapons[2].cfg.maxAmmo;
+    return true;
+  }
+
+  collect(player, game, fx) {
+    this.alive = false;
+    this.scene.remove(this.mesh);
+    const P = CONFIG.pickups;
+
+    if (this.type === "medkit") {
+      player.health = Math.min(player.maxHealth, player.health + P.medkitHp);
+      game.triggerFlash("green");
+      fx.popup(this.pos.x, this.pos.y + 0.8, this.pos.z, "+25 HP");
+      fx.sparks(this.pos, new THREE.Vector3(0, 1, 0), 0x2ecc71, 10);
+    } else if (this.type === "armor") {
+      player.armor = Math.min(player.maxArmor, player.armor + P.armorAp);
+      game.triggerFlash("blue");
+      fx.popup(this.pos.x, this.pos.y + 0.8, this.pos.z, "+25 AP");
+      fx.sparks(this.pos, new THREE.Vector3(0, 1, 0), 0x33a1fd, 10);
+    } else if (this.type === "ammo_shotgun") {
+      const w = game.combat.weapons[0];
+      w.ammo = Math.min(w.cfg.maxAmmo, w.ammo + P.shotgunAmmo);
+      fx.popup(this.pos.x, this.pos.y + 0.8, this.pos.z, "+8 ДРОБОВИК");
+      fx.sparks(this.pos, new THREE.Vector3(0, 1, 0), 0xffd23f, 8);
+    } else if (this.type === "ammo_plasma") {
+      const w = game.combat.weapons[1];
+      w.ammo = Math.min(w.cfg.maxAmmo, w.ammo + P.plasmaAmmo);
+      fx.popup(this.pos.x, this.pos.y + 0.8, this.pos.z, "+50 ПЛАЗМА");
+      fx.sparks(this.pos, new THREE.Vector3(0, 1, 0), 0x2ee6d6, 8);
+    } else if (this.type === "ammo_rocket") {
+      const w = game.combat.weapons[2];
+      w.ammo = Math.min(w.cfg.maxAmmo, w.ammo + P.rocketAmmo);
+      fx.popup(this.pos.x, this.pos.y + 0.8, this.pos.z, "+4 РАКЕТЫ");
+      fx.sparks(this.pos, new THREE.Vector3(0, 1, 0), 0xff7a1a, 8);
+    }
+  }
+
+  update(dt, player, game, fx) {
+    if (!this.alive) return;
+    this.life -= dt;
+    if (this.life <= 0) {
+      this.alive = false;
+      this.scene.remove(this.mesh);
+      return;
+    }
+
+    // Мигание в последние 5 секунд
+    if (this.life <= 5.0) {
+      this.mesh.visible = (Math.sin(this.life * 14) > 0);
+    }
+
+    if (!this.hovering) {
+      this.vel.y -= 18 * dt;
+      this.pos.addScaledVector(this.vel, dt);
+      if (this.pos.y <= this.groundY + 0.3) {
+        this.pos.y = this.groundY + 0.3;
+        if (!this.bounced) {
+          this.bounced = true;
+          this.vel.y = Math.abs(this.vel.y) * 0.45;
+          this.vel.x *= 0.5; this.vel.z *= 0.5;
+        } else {
+          this.hovering = true;
+          this.hoverBaseY = this.pos.y;
+          this.vel.set(0, 0, 0);
+        }
+      }
+    } else {
+      this.hoverT += dt * 3;
+      this.pos.y = this.hoverBaseY + Math.sin(this.hoverT) * 0.08;
+    }
+
+    this.mesh.rotation.y += dt * 2.2;
+    this.mesh.position.copy(this.pos);
+
+    const canRec = this.canPlayerCollect(player, game);
+    const d = this.pos.distanceTo(player.pos);
+
+    // Магнит
+    if (canRec && d <= CONFIG.pickups.magnetRadius) {
+      const k = Math.min(1, dt * (5 + (1 - d / CONFIG.pickups.magnetRadius) * 12));
+      const targetPos = player.pos.clone(); targetPos.y += 0.8;
+      this.pos.lerp(targetPos, k);
+    }
+
+    // Подбор
+    if (canRec && d <= CONFIG.pickups.pickupRadius) {
+      this.collect(player, game, fx);
+    }
+  }
+
+  destroy() {
+    this.alive = false;
+    this.scene.remove(this.mesh);
+  }
+}
+
+/* ---------- Тестовая мишень ---------- */
+class Target {
+  constructor(scene, x, y, z, color) {
+    this.base = new THREE.Vector3(x, y, z); this.color = color;
+    this.min = new THREE.Vector3(x - 0.5, y, z - 0.5);
+    this.max = new THREE.Vector3(x + 0.5, y + 1.95, z + 0.5);
+    this.mat = new THREE.MeshLambertMaterial({ color });
+    this.headMat = new THREE.MeshLambertMaterial({ color: 0xffe066 });
+    this.group = new THREE.Group(); this.group.position.set(x, y, z);
+    const body = outlined(new THREE.CylinderGeometry(0.42, 0.5, 1.3, 10), this.mat); body.position.y = 0.65;
+    const head = outlined(new THREE.SphereGeometry(0.32, 10, 8), this.headMat, 40); head.position.y = 1.62;
+    const ring = outlined(new THREE.CylinderGeometry(0.22, 0.22, 0.06, 10), new THREE.MeshLambertMaterial({ color: 0xffffff }));
+    ring.rotation.x = Math.PI / 2; ring.position.set(0, 0.85, 0.46);
+    this.group.add(body, head, ring); scene.add(this.group);
+    this.hp = CONFIG.combat.targetHp; this.alive = true; this.flashT = 0; this.respawnT = 0;
+  }
+  setFlash(on) { this.mat.emissive.setHex(on ? 0xffffff : 0); this.headMat.emissive.setHex(on ? 0xffffff : 0); }
+  hit(dmg, fx) {
+    if (!this.alive) return false;
+    this.hp -= dmg; this.flashT = 0.08; this.setFlash(true);
+    fx.popup(this.base.x, this.base.y + 2.4, this.base.z, Math.max(1, Math.round(dmg)));
+    if (this.hp <= 0) {
+      this.alive = false; this.group.visible = false; this.respawnT = CONFIG.combat.targetRespawn;
+      return true;
+    }
+    return false;
+  }
+  update(dt) {
+    if (this.alive) { if (this.flashT > 0 && (this.flashT -= dt) <= 0) this.setFlash(false); }
+    else if ((this.respawnT -= dt) <= 0) { this.alive = true; this.hp = CONFIG.combat.targetHp; this.group.visible = true; this.setFlash(false); }
+  }
+}
+
+/* ===================== КЛАСС ЗОМБИ (Zombie) ===================== */
+class Zombie {
+  constructor(scene, x, y, z) {
+    this.scene = scene;
+    const C = CONFIG.enemies.zombie;
+    this.pos = new THREE.Vector3(x, y, z);
+    this.vel = new THREE.Vector3();
+    this.speed = C.speed * (1 + rnd(C.speedVar));
+    this.hp = C.health;
+    this.maxHp = C.health;
+    this.state = "idle"; // idle, chase, attack, stagger, unreachable, stunned, dead
+    this.alive = true;
+
+    this.attackT = 0;
+    this.attackCd = 0;
+    this.staggerT = 0;
+    this.flashT = 0;
+    this.unreachableT = 0;
+    this.stunTimer = 0;
+    this.wobbleT = Math.random() * 10;
+    this.checkStuckT = 0;
+    this.lastCheckPos = new THREE.Vector3(x, y, z);
+    this.sidestepDir = new THREE.Vector3();
+    this.sidestepT = 0;
+
+    this.bodyMin = new THREE.Vector3();
+    this.bodyMax = new THREE.Vector3();
+    this.headMin = new THREE.Vector3();
+    this.headMax = new THREE.Vector3();
+
+    this.buildModel();
+    this.updateHitboxes();
+  }
+
+  buildModel() {
+    this.group = new THREE.Group();
+    this.group.position.copy(this.pos);
+
+    this.coatMat = new THREE.MeshLambertMaterial({ color: 0xeeeeee });
+    this.skinMat = new THREE.MeshLambertMaterial({ color: 0x55aa44 });
+    this.pantsMat = new THREE.MeshLambertMaterial({ color: 0x2b283d });
+    this.badgeMat = new THREE.MeshLambertMaterial({ color: 0xffd23f });
+    this.eyeWMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    this.eyeBMat = new THREE.MeshLambertMaterial({ color: 0x1b1340 });
+    this.stainMat = new THREE.MeshLambertMaterial({ color: 0x38b000 });
+
+    const box = (w, h, d, mat) => outlined(new THREE.BoxGeometry(w, h, d), mat);
+    const sph = (r, mat) => outlined(new THREE.SphereGeometry(r, 10, 8), mat, 40);
+
+    // Тело
+    this.torso = box(0.55, 0.95, 0.32, this.coatMat);
+    this.torso.position.y = 1.05;
+    this.group.add(this.torso);
+
+    // Бейдж и пятна
+    const badge = box(0.12, 0.16, 0.04, this.badgeMat);
+    badge.position.set(0.15, 1.25, 0.17);
+    const stain1 = box(0.16, 0.22, 0.02, this.stainMat);
+    stain1.position.set(-0.12, 0.95, 0.17);
+    const stain2 = box(0.2, 0.14, 0.02, new THREE.MeshLambertMaterial({ color: 0x991b1b }));
+    stain2.position.set(0.08, 0.8, 0.17);
+    this.group.add(badge, stain1, stain2);
+
+    // Голова
+    this.headGroup = new THREE.Group();
+    this.headGroup.position.set(0, 1.74, 0);
+    const headMesh = sph(0.3, this.skinMat);
+    const eyeL = sph(0.1, this.eyeWMat); eyeL.position.set(-0.11, 0.06, 0.24);
+    const pupilL = sph(0.045, this.eyeBMat); pupilL.position.set(-0.11, 0.06, 0.32);
+    const eyeR = sph(0.07, this.eyeWMat); eyeR.position.set(0.12, 0.02, 0.26);
+    const pupilR = sph(0.035, this.eyeBMat); pupilR.position.set(0.12, 0.02, 0.32);
+    const jaw = box(0.26, 0.09, 0.18, this.skinMat); jaw.position.set(0, -0.2, 0.12);
+    this.headGroup.add(headMesh, eyeL, pupilL, eyeR, pupilR, jaw);
+    this.group.add(this.headGroup);
+
+    // Руки
+    this.armL = new THREE.Group();
+    this.armL.position.set(-0.36, 1.35, 0);
+    const armLMesh = box(0.15, 0.15, 0.7, this.coatMat); armLMesh.position.z = 0.35;
+    const handL = box(0.13, 0.13, 0.2, this.skinMat); handL.position.z = 0.75;
+    this.armL.add(armLMesh, handL);
+
+    this.armR = new THREE.Group();
+    this.armR.position.set(0.36, 1.35, 0);
+    const armRMesh = box(0.15, 0.15, 0.7, this.coatMat); armRMesh.position.z = 0.35;
+    const handR = box(0.13, 0.13, 0.2, this.skinMat); handR.position.z = 0.75;
+    this.armR.add(armRMesh, handR);
+    this.group.add(this.armL, this.armR);
+
+    // Ноги
+    this.legL = box(0.2, 0.6, 0.22, this.pantsMat); this.legL.position.set(-0.16, 0.3, 0);
+    this.legR = box(0.2, 0.6, 0.22, this.pantsMat); this.legR.position.set(0.16, 0.3, 0);
+    this.group.add(this.legL, this.legR);
+
+    // Эффект оглушения: звёздочки над головой
+    this.stunStars = new THREE.Group();
+    this.stunStars.position.set(0, 2.25, 0);
+    for (let i = 0; i < 3; i++) {
+      const star = outlined(new THREE.BoxGeometry(0.08, 0.08, 0.08), new THREE.MeshLambertMaterial({ color: 0xffd23f }));
+      const ang = (i / 3) * Math.PI * 2;
+      star.position.set(Math.cos(ang) * 0.26, 0, Math.sin(ang) * 0.26);
+      this.stunStars.add(star);
+    }
+    this.stunStars.visible = false;
+    this.group.add(this.stunStars);
+
+    // Подсказка "[E] ДОБИТЬ"
+    const cv = document.createElement("canvas"); cv.width = 256; cv.height = 64;
+    const ctx = cv.getContext("2d");
+    ctx.font = "900 36px 'Trebuchet MS', Verdana, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffd23f"; ctx.strokeStyle = "#1b1340"; ctx.lineWidth = 7;
+    ctx.strokeText("[E] ДОБИТЬ", 128, 32); ctx.fillText("[E] ДОБИТЬ", 128, 32);
+    const tex = new THREE.CanvasTexture(cv);
+    this.promptSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    this.promptSprite.position.set(0, 2.55, 0);
+    this.promptSprite.scale.set(1.6, 0.4, 1);
+    this.promptSprite.visible = false;
+    this.group.add(this.promptSprite);
+
+    this.scene.add(this.group);
+  }
+
+  setFlash(on) {
+    const hex = on ? 0xffffff : 0;
+    this.coatMat.emissive.setHex(hex);
+    this.skinMat.emissive.setHex(hex);
+  }
+
+  updateHitboxes() {
+    const x = this.pos.x, y = this.pos.y, z = this.pos.z;
+    this.bodyMin.set(x - 0.45, y, z - 0.45);
+    this.bodyMax.set(x + 0.45, y + 1.48, z + 0.45);
+    this.headMin.set(x - 0.28, y + 1.48, z - 0.28);
+    this.headMax.set(x + 0.28, y + 2.1, z + 0.28);
+  }
+
+  takeDamage(dmg, isHeadshot, pushVec, fx, game) {
+    if (!this.alive) return;
+    const finalDmg = isHeadshot ? dmg * 2 : dmg;
+    this.hp -= finalDmg;
+    this.flashT = 0.08;
+    this.setFlash(true);
+
+    fx.popup(this.pos.x, this.pos.y + 2.2, this.pos.z, Math.round(finalDmg), isHeadshot);
+    const hitNormal = pushVec ? pushVec.clone().normalize().negate() : new THREE.Vector3(0, 1, 0);
+    fx.bloodSpray(this.pos, hitNormal, finalDmg);
+
+    if (pushVec) this.vel.addScaledVector(pushVec, 0.4);
+
+    // Проверка на смерть
+    if (this.hp <= 0) {
+      const wasStunned = (this.state === "stunned");
+      this.die(isHeadshot, pushVec, fx, game, false, wasStunned);
+      return;
+    }
+
+    // Проверка оглушения (< 25% HP)
+    if (this.hp <= this.maxHp * CONFIG.glory.stunThreshold && this.state !== "stunned") {
+      this.state = "stunned";
+      this.stunTimer = CONFIG.glory.stunDuration;
+      return;
+    }
+
+    if (this.state !== "stunned") {
+      this.state = "stagger";
+      this.staggerT = CONFIG.enemies.zombie.staggerTime;
+    }
+  }
+
+  die(isHeadshot, pushVec, fx, game, isGloryKill = false, wasStunned = false) {
+    this.alive = false;
+    this.state = "dead";
+    this.group.visible = false;
+    this.stunStars.visible = false;
+    this.promptSprite.visible = false;
+
+    const C = CONFIG.enemies.zombie;
+    const pts = isGloryKill ? CONFIG.glory.score : (isHeadshot ? (C.scoreValue + C.headshotBonus) : C.scoreValue);
+    game.onZombieKill(pts, isHeadshot, isGloryKill);
+
+    const isOverkill = isGloryKill || (pushVec && pushVec.length() > 16);
+    const gibCount = isOverkill ? 14 : (isHeadshot ? 8 : 6);
+    fx.zombieGibs(this.pos, gibCount, isHeadshot);
+    fx.decal(this.pos, new THREE.Vector3(0, 1, 0), CONFIG.blood.zombieColor, 1.4);
+
+    // Дроп предметов
+    game.spawnDrops(this.pos, isGloryKill, wasStunned);
+  }
+
+  alert() {
+    if (this.alive && (this.state === "idle" || this.state === "unreachable")) {
+      this.state = "chase";
+    }
+  }
+
+  steer(targetDir, world) {
+    const origin = new THREE.Vector3(this.pos.x, this.pos.y + 0.8, this.pos.z);
+    let forwardBlocked = false;
+    for (const b of world.boxes) {
+      const h = rayAABB(origin, targetDir, b.min, b.max, 0.4);
+      if (h && h.t < 1.8) { forwardBlocked = true; break; }
+    }
+
+    if (!forwardBlocked) return targetDir;
+
+    const leftDir = new THREE.Vector3(targetDir.x * 0.707 - targetDir.z * 0.707, 0, targetDir.x * 0.707 + targetDir.z * 0.707);
+    const rightDir = new THREE.Vector3(targetDir.x * 0.707 + targetDir.z * 0.707, 0, -targetDir.x * 0.707 + targetDir.z * 0.707);
+
+    let leftT = 10, rightT = 10;
+    for (const b of world.boxes) {
+      const hl = rayAABB(origin, leftDir, b.min, b.max, 0.4);
+      if (hl && hl.t < leftT) leftT = hl.t;
+      const hr = rayAABB(origin, rightDir, b.min, b.max, 0.4);
+      if (hr && hr.t < rightT) rightT = hr.t;
+    }
+
+    return leftT > rightT ? leftDir : rightDir;
+  }
+
+  update(dt, player, world, zombies, game, fx) {
+    if (!this.alive) return;
+    const C = CONFIG.enemies.zombie;
+
+    if (this.flashT > 0 && (this.flashT -= dt) <= 0) this.setFlash(false);
+
+    const toPlayer = new THREE.Vector3(player.pos.x - this.pos.x, 0, player.pos.z - this.pos.z);
+    const horizDist = toPlayer.length();
+    const dirToPlayer = horizDist > 1e-4 ? toPlayer.clone().normalize() : new THREE.Vector3(0, 0, 1);
+
+    // Проверка разницы высот
+    const playerChestY = player.pos.y + 0.9;
+    const zombieChestY = this.pos.y + 1.05;
+    const heightDiff = Math.abs(playerChestY - zombieChestY);
+    const isPlayerMuchHigher = (player.pos.y - this.pos.y) > 1.5;
+
+    // 0. Состояние STUNNED (Оглушён для добивания)
+    if (this.state === "stunned") {
+      this.vel.x = 0; this.vel.z = 0;
+      this.wobbleT += dt * 4;
+      this.stunStars.visible = true;
+      this.stunStars.rotation.y += dt * 4;
+
+      // Мигает оранжевым 4 раза в секунду
+      const isOrange = Math.sin(this.wobbleT * 12) > 0;
+      const oc = isOrange ? 0xff7700 : 0;
+      this.coatMat.emissive.setHex(oc);
+      this.skinMat.emissive.setHex(oc);
+
+      this.torso.rotation.z = Math.sin(this.wobbleT * 2) * 0.12;
+      this.torso.rotation.x = 0.22;
+      this.armL.rotation.x = -0.2; this.armR.rotation.x = -0.2;
+
+      // Проверка подсказки "[E] ДОБИТЬ"
+      const eyeDir = new THREE.Vector3();
+      player.camera.getWorldDirection(eyeDir);
+      const toZ = this.pos.clone().sub(player.pos);
+      const dist3D = toZ.length();
+      toZ.normalize();
+      const dot = eyeDir.dot(toZ);
+      const inCone = dot >= Math.cos(CONFIG.glory.angle * Math.PI / 180);
+
+      // Проверка стен
+      let hasWall = false;
+      const rayStart = player.camera.position.clone();
+      for (const b of world.boxes) {
+        const h = rayAABB(rayStart, toZ, b.min, b.max, 0.1);
+        if (h && h.t < dist3D - 0.5) { hasWall = true; break; }
+      }
+
+      const canGlory = (dist3D <= CONFIG.glory.range) && inCone && !hasWall && !player.isDead && (player.dashTimer <= 0);
+      this.promptSprite.visible = canGlory;
+      if (canGlory) {
+        const pScale = 1.6 + Math.sin(Date.now() * 0.008) * 0.2;
+        this.promptSprite.scale.set(pScale, pScale * 0.25, 1);
+      }
+
+      this.stunTimer -= dt;
+      if (this.stunTimer <= 0) {
+        // Приходит в себя с 25% HP
+        this.state = "chase";
+        this.hp = this.maxHp * CONFIG.glory.stunThreshold;
+        this.stunStars.visible = false;
+        this.promptSprite.visible = false;
+        this.coatMat.emissive.setHex(0);
+        this.skinMat.emissive.setHex(0);
+        this.torso.rotation.x = 0;
+      }
+
+      this.vel.y -= CONFIG.gravity * dt;
+      this.move(dt, world);
+      this.group.position.copy(this.pos);
+      this.updateHitboxes();
+      return;
+    } else {
+      this.stunStars.visible = false;
+      this.promptSprite.visible = false;
+    }
+
+    // 1. Проверка состояния UNREACHABLE (игрок высоко на блоке)
+    if (isPlayerMuchHigher && horizDist < 2.5 && this.state !== "attack") {
+      this.state = "unreachable";
+      this.unreachableT = 4.0;
+    }
+
+    if (this.state === "unreachable") {
+      this.vel.x = 0; this.vel.z = 0;
+      this.wobbleT += dt * 8;
+      // Смотрит вверх
+      this.headGroup.rotation.x = -0.7;
+      // Машет руками и рычит анимацией
+      this.armL.rotation.x = 0.6 + Math.sin(this.wobbleT * 8) * 0.5;
+      this.armR.rotation.x = 0.6 - Math.sin(this.wobbleT * 8) * 0.5;
+      this.torso.rotation.z = Math.sin(this.wobbleT * 4) * 0.1;
+
+      this.unreachableT -= dt;
+      if (this.unreachableT <= 0) {
+        if (!isPlayerMuchHigher) {
+          this.state = "chase";
+          this.headGroup.rotation.x = 0;
+        } else {
+          // Пробует немного отойти/обойти
+          this.unreachableT = 3.0;
+        }
+      }
+
+      this.vel.y -= CONFIG.gravity * dt;
+      this.move(dt, world);
+      this.group.position.copy(this.pos);
+      this.updateHitboxes();
+      return;
+    } else {
+      this.headGroup.rotation.x = 0;
+    }
+
+    // 2. Состояние IDLE
+    if (this.state === "idle") {
+      this.wobbleT += dt * 2;
+      this.torso.rotation.z = Math.sin(this.wobbleT) * 0.05;
+      if (horizDist < C.aggroRange) {
+        let hasLOS = true;
+        const origin = new THREE.Vector3(this.pos.x, this.pos.y + 1.2, this.pos.z);
+        for (const b of world.boxes) {
+          const h = rayAABB(origin, dirToPlayer, b.min, b.max, 0.1);
+          if (h && h.t < horizDist) { hasLOS = false; break; }
+        }
+        if (hasLOS) this.state = "chase";
+      }
+    }
+
+    // 3. Состояние CHASE
+    else if (this.state === "chase") {
+      this.wobbleT += dt * 8;
+      const yaw = Math.atan2(dirToPlayer.x, dirToPlayer.z);
+      this.group.rotation.y = yaw;
+
+      this.torso.rotation.z = Math.sin(this.wobbleT) * 0.08;
+      this.legL.rotation.x = Math.sin(this.wobbleT) * 0.45;
+      this.legR.rotation.x = -Math.sin(this.wobbleT) * 0.45;
+      this.armL.rotation.x = 0.1 + Math.sin(this.wobbleT) * 0.15;
+      this.armR.rotation.x = 0.1 - Math.sin(this.wobbleT) * 0.15;
+
+      let moveDir = this.steer(dirToPlayer, world);
+
+      this.checkStuckT += dt;
+      if (this.checkStuckT >= 0.8) {
+        const moved = this.pos.distanceTo(this.lastCheckPos);
+        if (moved < 0.25) {
+          this.sidestepT = 0.6;
+          this.sidestepDir.set(-dirToPlayer.z, 0, dirToPlayer.x).multiplyScalar(Math.random() < 0.5 ? 1 : -1);
+        }
+        this.lastCheckPos.copy(this.pos);
+        this.checkStuckT = 0;
+      }
+
+      if (this.sidestepT > 0) {
+        this.sidestepT -= dt;
+        moveDir.addScaledVector(this.sidestepDir, 1.2).normalize();
+      }
+
+      this.vel.x = moveDir.x * this.speed;
+      this.vel.z = moveDir.z * this.speed;
+
+      // Проверка начала атаки (с ограничением высоты!)
+      if (horizDist <= C.attackRange && heightDiff <= CONFIG.enemies.meleeMaxHeightDiff && this.attackCd <= 0) {
+        this.state = "attack";
+        this.attackT = 0;
+      }
+    }
+
+    // 4. Состояние ATTACK
+    else if (this.state === "attack") {
+      this.vel.x *= 0.5; this.vel.z *= 0.5;
+      this.attackT += dt;
+      const windupProg = Math.min(1, this.attackT / C.attackWindup);
+      this.armL.rotation.x = 0.2 + windupProg * 0.9;
+      this.armR.rotation.x = 0.2 + windupProg * 0.9;
+
+      if (this.attackT >= C.attackWindup) {
+        // Удар только если игрок всё ещё в зоне досягаемости по дистанции И по высоте!
+        if (horizDist <= C.attackRange + 0.4 && heightDiff <= CONFIG.enemies.meleeMaxHeightDiff) {
+          player.takeDamage(C.damage, this.pos, game);
+        }
+        this.attackCd = C.attackCooldown;
+        this.state = "chase";
+      }
+    }
+
+    // 5. Состояние STAGGER
+    else if (this.state === "stagger") {
+      this.staggerT -= dt;
+      this.armL.rotation.x = 0.8;
+      this.armR.rotation.x = 0.8;
+      this.torso.rotation.x = -0.3;
+      if (this.staggerT <= 0) {
+        this.torso.rotation.x = 0;
+        this.state = "chase";
+      }
+    }
+
+    if (this.attackCd > 0) this.attackCd -= dt;
+
+    // Расталкивание
+    for (const other of zombies) {
+      if (other === this || !other.alive) continue;
+      const dx = this.pos.x - other.pos.x, dz = this.pos.z - other.pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 0.9 && d > 1e-4) {
+        const pushForce = (0.9 - d) * 3.5 * dt;
+        this.pos.x += (dx / d) * pushForce;
+        this.pos.z += (dz / d) * pushForce;
+      }
+    }
+
+    this.vel.y -= CONFIG.gravity * dt;
+    this.move(dt, world);
+    this.group.position.copy(this.pos);
+    this.updateHitboxes();
+  }
+
+  move(dt, world) {
+    const sdt = dt;
+    this.pos.x += this.vel.x * sdt; this.collide(world, "x");
+    this.pos.z += this.vel.z * sdt; this.collide(world, "z");
+    this.pos.y += this.vel.y * sdt; this.collide(world, "y");
+  }
+
+  collide(world, axis) {
+    const r = 0.42, h = 1.9, p = this.pos, v = this.vel;
+    const EPS = 0.001;
+
+    if (axis === "y" && p.y < 0) {
+      p.y = 0; if (v.y < 0) v.y = 0;
+    }
+
+    for (const b of world.boxes) {
+      if (p.x + r <= b.min.x || p.x - r >= b.max.x ||
+          p.z + r <= b.min.z || p.z - r >= b.max.z ||
+          p.y + h <= b.min.y || p.y >= b.max.y) continue;
+
+      if (axis === "x") {
+        p.x = v.x > 0 ? b.min.x - r - EPS : b.max.x + r + EPS;
+        v.x = 0;
+      } else if (axis === "z") {
+        p.z = v.z > 0 ? b.min.z - r - EPS : b.max.z + r + EPS;
+        v.z = 0;
+      } else {
+        if (v.y <= 0) { p.y = b.max.y; v.y = 0; }
+        else { p.y = b.min.y - h - EPS; v.y = 0; }
+      }
+    }
+  }
+
+  destroy() {
+    this.alive = false;
+    this.scene.remove(this.group);
+  }
+}
+
+class Weapon {
+  constructor(id, cfg) { this.id = id; this.cfg = cfg; this.ammo = cfg.ammo; this.cool = 0; }
+}
+
+/* ===================== БОЕВАЯ СИСТЕМА ===================== */
+class Combat {
+  constructor(scene, camera, world, player, game) {
+    this.scene = scene; this.camera = camera; this.world = world; this.player = player; this.game = game;
+    this.fx = new Fx(scene);
+    this.weapons = ["shotgun", "plasma", "rocket"].map(id => new Weapon(id, CONFIG.weapons[id]));
+    this.idx = 0; this.cur = this.weapons[0];
+    this.mouseDown = false; this.switchT = 0; this.appear = 1; this.kick = 0;
+    this.flashT = 0; this.lightT = 0; this.bobT = 0; this.bobA = 0; this.hitT = 0; this.hitKill = false;
+    const V = () => new THREE.Vector3();
+    this.dir = V(); this.right = V(); this.up = V(); this.tmpA = V(); this.tmpB = V(); this.tmpC = V(); this.hp = V(); this.hn = V();
+    this.hit = { t: 0, target: null, zombie: null, isHead: false };
+    this.mLight = new THREE.PointLight(0xffb040, 0, 14); scene.add(this.mLight);
+
+    // Добивания
+    this.gloryActive = false;
+    this.gloryTarget = null;
+    this.gloryTimer = 0;
+    this.gloryDuration = CONFIG.glory.duration;
+    this.gloryType = "punch";
+    this.gloryExecuted = false;
+    this.gloryStartPos = V();
+    this.gloryTargetPos = V();
+
+    // 2 мишени в углу
+    this.targets = [
+      new Target(scene, -15, 0, 15, 0xff4f8b),
+      new Target(scene, -15, 0, 11, 0x7c5cff)
+    ];
+
+    // Пулы снарядов
+    this.pools = { plasma: [], rocket: [] };
+    const mk = (kind, g) => {
+      g.visible = false; scene.add(g);
+      this.pools[kind].push({ m: g, pos: g.position, vel: V(), from: V(), life: 0, on: false, dmg: 0, r: 0.1, trail: 0 });
+    };
+    const H = Math.PI / 2;
+    for (let i = 0; i < 40; i++) {
+      const g = new THREE.Group();
+      const core = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), new THREE.MeshBasicMaterial({ color: 0x9ffcff })); core.scale.z = 2.2;
+      const glow = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), new THREE.MeshBasicMaterial({ color: 0x2ee6d6, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }));
+      glow.scale.z = 2.6; g.add(core, glow); mk("plasma", g);
+    }
+    for (let i = 0; i < 6; i++) {
+      const g = new THREE.Group();
+      const body = outlined(new THREE.CylinderGeometry(0.1, 0.1, 0.5, 10), new THREE.MeshLambertMaterial({ color: 0xff4f8b })); body.rotation.x = H;
+      const cone = outlined(new THREE.ConeGeometry(0.1, 0.25, 10), new THREE.MeshLambertMaterial({ color: 0xffd23f })); cone.rotation.x = H; cone.position.z = 0.37;
+      const f1 = outlined(new THREE.BoxGeometry(0.3, 0.03, 0.16), new THREE.MeshLambertMaterial({ color: 0x7c5cff })); f1.position.z = -0.22;
+      const f2 = outlined(new THREE.BoxGeometry(0.03, 0.3, 0.16), new THREE.MeshLambertMaterial({ color: 0x7c5cff })); f2.position.z = -0.22;
+      g.add(body, cone, f1, f2); mk("rocket", g);
+    }
+
+    this.buildView();
+    this.buildHud();
+    this.setupUi();
+  }
+
+  buildView() {
+    this.wScene = new THREE.Scene();
+    this.wCam = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.01, 10);
+    this.wScene.add(new THREE.HemisphereLight(0xffffff, 0xffc0e0, 1.0));
+    const dl = new THREE.DirectionalLight(0xffffff, 0.6); dl.position.set(1, 2, 1); this.wScene.add(dl);
+    this.view = new THREE.Group(); this.wScene.add(this.view);
+    const H = Math.PI / 2;
+    const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+    const cyl = (r, l, s) => new THREE.CylinderGeometry(r, r, l, s || 12);
+    const sph = (r) => new THREE.SphereGeometry(r, 10, 8);
+    const cone = (r, l) => new THREE.ConeGeometry(r, l, 12);
+    const tor = (r, tube) => new THREE.TorusGeometry(r, tube, 8, 16);
+    const part = (geo, color, x, y, z, rx, ry, rz) => {
+      const m = outlined(geo, new THREE.MeshLambertMaterial({ color }));
+      m.position.set(x, y, z);
+      if (rx || ry || rz) m.rotation.set(rx || 0, ry || 0, rz || 0);
+      return m;
+    };
+    const partE = (geo, color, emissive, x, y, z, ei) => {
+      const mat = new THREE.MeshLambertMaterial({ color, emissive, emissiveIntensity: ei || 0.8 });
+      const m = outlined(geo, mat); m.position.set(x, y, z); return m;
+    };
+    const mkHand = (x, y, z, rx, ry, rz) => {
+      const hg = new THREE.Group();
+      hg.add(outlined(box(0.11, 0.12, 0.14), new THREE.MeshLambertMaterial({ color: 0xf5c6a0 })));
+      const cuff = outlined(box(0.12, 0.035, 0.15), new THREE.MeshLambertMaterial({ color: 0xffffff }));
+      cuff.position.y = 0.078; hg.add(cuff);
+      const thumb = outlined(box(0.04, 0.055, 0.04), new THREE.MeshLambertMaterial({ color: 0xf5c6a0 }));
+      thumb.position.set(0.065, -0.01, -0.04); hg.add(thumb);
+      hg.position.set(x, y, z);
+      if (rx || ry || rz) hg.rotation.set(rx || 0, ry || 0, rz || 0);
+      return hg;
+    };
+    this.models = {};
+
+    /* ДРОБОВИК */
+    {
+      const g = new THREE.Group();
+      g.add(part(cyl(0.032, 0.72), 0x9aa5b1, -0.032, 0.025, -0.5, H));
+      g.add(part(cyl(0.032, 0.72), 0x9aa5b1, 0.032, 0.025, -0.5, H));
+      g.add(part(cyl(0.028, 0.45, 10), 0x8a8e96, 0, -0.025, -0.4, H));
+      g.add(part(cyl(0.052, 0.025), 0xffd23f, 0, 0.025, -0.68, H));
+      g.add(part(box(0.018, 0.04, 0.018), 0xff4f8b, 0, 0.068, -0.82));
+      g.add(part(box(0.13, 0.11, 0.2), 0x6a6580, 0, 0.01, -0.14));
+      g.add(part(box(0.11, 0.09, 0.16), 0xb5651d, 0, -0.04, -0.42));
+      g.add(part(box(0.12, 0.03, 0.08), 0x8b4513, 0, -0.065, -0.48));
+      g.add(part(box(0.1, 0.09, 0.25), 0xb5651d, 0, -0.01, 0.14));
+      g.add(part(box(0.1, 0.09, 0.025), 0x4a4a4a, 0, -0.01, 0.27));
+      g.add(part(box(0.085, 0.17, 0.09), 0x1b1340, 0, -0.12, -0.01));
+      g.add(part(box(0.055, 0.018, 0.09), 0x4a4a4a, 0, -0.17, -0.06));
+      g.add(part(box(0.035, 0.035, 0.05), 0x4a4a4a, 0.058, 0.055, -0.08));
+      g.add(mkHand(0, -0.08, -0.44, 0.3));
+      g.add(mkHand(0, -0.15, 0.01, 0.2));
+      const flash = new THREE.Mesh(sph(0.13), new THREE.MeshBasicMaterial({ color: 0xfff1a0 }));
+      flash.position.set(0, 0.025, -0.88); flash.visible = false; g.add(flash);
+      g.visible = false; g.userData.flash = flash; this.view.add(g); this.models.shotgun = g;
+    }
+
+    /* ПЛАЗМОМЁТ */
+    {
+      const g = new THREE.Group();
+      g.add(part(cyl(0.085, 0.48, 16), 0x2ee6d6, 0, 0, -0.28, H));
+      g.add(part(cyl(0.095, 0.055, 16), 0x7c5cff, 0, 0, -0.02, H));
+      const core = partE(sph(0.06), 0x9ffcff, 0x2ee6d6, 0, 0, -0.32, 0.8);
+      core.material.transparent = true; core.material.opacity = 0.9; g.add(core);
+      g.add(part(tor(0.105, 0.014), 0x7c5cff, 0, 0, -0.18, H));
+      g.add(part(tor(0.105, 0.014), 0x7c5cff, 0, 0, -0.30, H));
+      g.add(part(tor(0.105, 0.014), 0x7c5cff, 0, 0, -0.42, H));
+      g.add(part(cone(0.11, 0.14), 0xffd23f, 0, 0, -0.59, H));
+      g.add(part(box(0.035, 0.02, 0.28), 0x555568, 0, 0.095, -0.22));
+      g.add(part(box(0.018, 0.07, 0.18), 0xff4f8b, 0.095, 0, -0.28));
+      g.add(part(box(0.018, 0.07, 0.18), 0xff4f8b, -0.095, 0, -0.28));
+      const cell = partE(box(0.055, 0.055, 0.09), 0x2ee6d6, 0x2ee6d6, 0, -0.095, -0.12, 0.6);
+      g.add(cell);
+      g.add(part(box(0.085, 0.17, 0.09), 0x1b1340, 0, -0.13, -0.03));
+      g.add(part(box(0.06, 0.06, 0.08), 0x3a3a50, 0, -0.065, -0.45));
+      g.add(mkHand(0, -0.055, -0.46, 0.4));
+      g.add(mkHand(0, -0.16, -0.03, 0.2));
+      const flash = new THREE.Mesh(sph(0.1), new THREE.MeshBasicMaterial({ color: 0x9ffcff }));
+      flash.position.set(0, 0, -0.68); flash.visible = false; g.add(flash);
+      g.visible = false; g.userData.flash = flash; g.userData.core = core;
+      this.view.add(g); this.models.plasma = g;
+    }
+
+    /* РАКЕТНИЦА */
+    {
+      const g = new THREE.Group();
+      g.add(part(cyl(0.115, 0.88, 16), 0xff9f1c, 0, 0.02, -0.38, H));
+      g.add(part(cyl(0.09, 0.9, 16), 0x3a3a3a, 0, 0.02, -0.38, H));
+      g.add(part(cone(0.075, 0.18), 0xff4f8b, 0, 0.02, -0.86, -H));
+      g.add(part(cyl(0.065, 0.14), 0xff4f8b, 0, 0.02, -0.76, H));
+      g.add(part(box(0.16, 0.018, 0.06), 0x7c5cff, 0, 0.02, -0.68));
+      g.add(part(box(0.018, 0.16, 0.06), 0x7c5cff, 0, 0.02, -0.68));
+      g.add(part(cyl(0.125, 0.05, 16), 0x8b4513, 0, 0.02, 0.08, H));
+      g.add(part(cyl(0.095, 0.04, 16), 0x2a2a3a, 0, 0.02, 0.11, H));
+      g.add(part(box(0.028, 0.028, 0.38), 0x555568, 0, 0.155, -0.28));
+      g.add(part(box(0.018, 0.045, 0.018), 0xffd23f, 0, 0.19, -0.48));
+      g.add(part(box(0.035, 0.035, 0.018), 0xffd23f, 0, 0.185, -0.08));
+      g.add(part(box(0.075, 0.15, 0.055), 0x1b1340, 0, -0.1, -0.48));
+      g.add(part(box(0.075, 0.17, 0.075), 0x1b1340, 0, -0.11, 0.02));
+      g.add(part(box(0.018, 0.035, 0.055), 0xffd23f, 0.125, 0.02, -0.13));
+      g.add(part(box(0.018, 0.035, 0.055), 0xffd23f, -0.125, 0.02, -0.13));
+      g.add(mkHand(0, -0.1, -0.48, 0.3));
+      g.add(mkHand(0, -0.15, 0.02, 0.2));
+      const flash = new THREE.Mesh(sph(0.15), new THREE.MeshBasicMaterial({ color: 0xfff1a0 }));
+      flash.position.set(0, 0.02, -0.92); flash.visible = false; g.add(flash);
+      g.visible = false; g.userData.flash = flash; this.view.add(g); this.models.rocket = g;
+    }
+  }
+
+  buildHud() {
+    const $ = id => document.getElementById(id);
+    this.ui = {
+      name: $("wname"), ammo: $("wammo"), hit: $("hit"), slots: $("slots"),
+      ch: { shotgun: $("chRing"), plasma: $("chDot"), rocket: $("crosshair") },
+      hpVal: $("hpVal"), hpFill: $("hpFill"),
+      apVal: $("apVal"), apFill: $("apFill"),
+      vignette: $("vignette"), gloryVignette: $("gloryVignette"), pickupFlash: $("pickupFlash"),
+      dmgIndicator: $("dmgIndicator"), dmgArc: $("dmgArc"),
+      quoteBox: $("quoteBox"),
+      waveBadge: $("waveBadge"), killsBadge: $("killsBadge"), scoreBadge: $("scoreBadge"),
+      waveBanner: $("waveBanner")
+    };
+    const icons = { shotgun: "💥", plasma: "🔷", rocket: "🚀" };
+    this.ui.slots.innerHTML = this.weapons.map((w, i) => '<div class="slot">' + (i + 1) + ' ' + icons[w.id] + '</div>').join("");
+    this.ammoText = "";
+  }
+
+  setupUi() {
+    for (const id in this.models) this.models[id].visible = id === this.cur.id;
+    for (const id in this.ui.ch) this.ui.ch[id].style.display = id === this.cur.id ? "block" : "none";
+    [...this.ui.slots.children].forEach((e, i) => e.classList.toggle("on", i === this.idx));
+    this.ui.name.textContent = this.cur.cfg.name; this.ammoText = "";
+  }
+
+  select(i) {
+    if (this.gloryActive) return;
+    i = (i + 3) % 3;
+    if (i === this.idx) return;
+    this.idx = i; this.cur = this.weapons[i];
+    this.switchT = CONFIG.combat.switchDelay; this.appear = 0;
+    this.setupUi();
+  }
+  cycle(d) { if (!this.gloryActive) this.select(this.idx + d); }
+  refill() { for (const w of this.weapons) w.ammo = w.cfg.maxAmmo; }
+
+  // Попытка запуска добивания (клавиша E)
+  tryGloryKill(zombies) {
+    if (this.gloryActive || this.player.isDead || this.player.dashTimer > 0) return;
+    const P = this.player, cam = this.camera;
+    cam.getWorldDirection(this.dir);
+
+    let bestZ = null, bestDist = CONFIG.glory.range;
+
+    for (const z of zombies) {
+      if (!z.alive || z.state !== "stunned") continue;
+      const toZ = z.pos.clone().sub(P.pos);
+      const d = toZ.length();
+      if (d > bestDist) continue;
+
+      toZ.normalize();
+      const dot = this.dir.dot(toZ);
+      if (dot < Math.cos(CONFIG.glory.angle * Math.PI / 180)) continue;
+
+      // Проверка стен
+      let blocked = false;
+      for (const b of this.world.boxes) {
+        const h = rayAABB(cam.position, toZ, b.min, b.max, 0.1);
+        if (h && h.t < d - 0.5) { blocked = true; break; }
+      }
+      if (!blocked) {
+        bestZ = z;
+        bestDist = d;
+      }
+    }
+
+    if (!bestZ) return;
+
+    // Расчёт точки остановки перед зомби (дистанция 1.3м)
+    const stopDir = P.pos.clone().sub(bestZ.pos);
+    stopDir.y = 0;
+    if (stopDir.length() > 0.001) stopDir.normalize(); else stopDir.set(0, 0, 1);
+    const dest = bestZ.pos.clone().addScaledVector(stopDir, 1.3);
+    dest.y = bestZ.pos.y;
+
+    // Проверка коллизий точки назначения со стенами
+    const r = CONFIG.player.radius, h = CONFIG.player.height;
+    for (const b of this.world.boxes) {
+      if (dest.x + r > b.min.x && dest.x - r < b.max.x &&
+          dest.z + r > b.min.z && dest.z - r < b.max.z &&
+          dest.y + h > b.min.y && dest.y < b.max.y) {
+        return; // путь заблокирован блоком
+      }
+    }
+
+    // Старт добивания
+    this.gloryActive = true;
+    this.gloryTarget = bestZ;
+    this.gloryTimer = 0;
+    this.gloryExecuted = false;
+    this.gloryStartPos.copy(P.pos);
+    this.gloryTargetPos.copy(dest);
+    this.gloryType = ["punch", "rip", "kick"][Math.floor(Math.random() * 3)];
+    P.invulnT = this.gloryDuration + 0.3;
+    this.game.timeScale = CONFIG.glory.timeScale;
+    this.ui.gloryVignette.style.opacity = "1";
+  }
+
+  cast(o, d, maxT, r, zombies) {
+    let bt = maxT, ba = -1, bs = 0, tg = null, zm = null, isHead = false;
+
+    for (const b of this.world.boxes) {
+      const h = rayAABB(o, d, b.min, b.max, r);
+      if (h && h.t < bt) { bt = h.t; ba = h.a; bs = h.s; tg = null; zm = null; }
+    }
+    if (d.y < -1e-9) {
+      const t = (r - o.y) / d.y;
+      if (t >= 0 && t < bt) { bt = t; ba = 1; bs = 1; tg = null; zm = null; }
+    }
+    for (const t of this.targets) {
+      if (!t.alive) continue;
+      const h = rayAABB(o, d, t.min, t.max, r);
+      if (h && h.t < bt) { bt = h.t; ba = h.a; bs = h.s; tg = t; zm = null; }
+    }
+    if (zombies) {
+      for (const z of zombies) {
+        if (!z.alive) continue;
+        const hh = rayAABB(o, d, z.headMin, z.headMax, r);
+        if (hh && hh.t < bt) {
+          bt = hh.t; ba = hh.a; bs = hh.s; zm = z; tg = null; isHead = true;
+          continue;
+        }
+        const hb = rayAABB(o, d, z.bodyMin, z.bodyMax, r);
+        if (hb && hb.t < bt) {
+          bt = hb.t; ba = hb.a; bs = hb.s; zm = z; tg = null; isHead = false;
+        }
+      }
+    }
+
+    if (ba < 0) return null;
+    this.hn.set(0, 0, 0); this.hn[AX[ba]] = bs;
+    this.hp.copy(o).addScaledVector(d, bt).addScaledVector(this.hn, -r);
+    this.hit.t = bt; this.hit.target = tg; this.hit.zombie = zm; this.hit.isHead = isHead;
+    return this.hit;
+  }
+
+  spreadDir(out, deg) {
+    const a = Math.tan(deg * Math.PI / 180), r = Math.sqrt(Math.random()) * a, ph = Math.random() * 6.2832;
+    return out.copy(this.dir).addScaledVector(this.right, Math.cos(ph) * r).addScaledVector(this.up, Math.sin(ph) * r).normalize();
+  }
+
+  damageTarget(t, d) {
+    const killed = t.hit(d, this.fx);
+    if (killed) this.hitKill = true; else if (this.hitT <= 0) this.hitKill = false;
+    this.hitT = 0.18;
+  }
+
+  damageZombie(z, d, isHead, pushVec) {
+    z.takeDamage(d, isHead, pushVec, this.fx, this.game);
+    if (!z.alive) this.hitKill = true; else if (this.hitT <= 0) this.hitKill = false;
+    this.hitT = 0.18;
+  }
+
+  fire(W, zombies) {
+    if (this.gloryActive) return;
+    const c = W.cfg, P = this.player, cam = this.camera;
+    cam.getWorldDirection(this.dir);
+    this.right.set(1, 0, 0).applyQuaternion(cam.quaternion);
+    this.up.set(0, 1, 0).applyQuaternion(cam.quaternion);
+    W.ammo--; W.cool = c.cooldown;
+
+    for (const z of zombies) {
+      if (z.alive && z.pos.distanceTo(P.pos) < CONFIG.enemies.zombie.alertRadius) z.alert();
+    }
+
+    if (W.id === "shotgun") {
+      const dmTargets = new Map();
+      const dmZombies = new Map();
+
+      for (let i = 0; i < c.pellets; i++) {
+        const h = this.cast(cam.position, this.spreadDir(this.tmpC, c.spread), c.range, 0, zombies);
+        if (!h) continue;
+        let k = 1;
+        if (h.t > c.falloffStart) k = 1 - (1 - c.falloffMin) * Math.min(1, (h.t - c.falloffStart) / (c.range - c.falloffStart));
+        const pDmg = c.damage * k;
+
+        if (h.zombie) {
+          const entry = dmZombies.get(h.zombie) || { dmg: 0, isHead: false, push: new THREE.Vector3() };
+          entry.dmg += pDmg;
+          if (h.isHead) entry.isHead = true;
+          entry.push.addScaledVector(this.tmpC, c.pushEnemy * 0.1);
+          dmZombies.set(h.zombie, entry);
+        } else if (h.target) {
+          dmTargets.set(h.target, (dmTargets.get(h.target) || 0) + pDmg);
+        } else {
+          this.fx.decal(this.hp, this.hn, 0x1b1340, 0.4);
+        }
+        this.fx.sparks(this.hp, this.hn, 0xffd23f, 3);
+      }
+
+      for (const [t, d] of dmTargets) this.damageTarget(t, d);
+      for (const [z, entry] of dmZombies) this.damageZombie(z, entry.dmg, entry.isHead, entry.push);
+
+      if (!P.onGround) P.vel.addScaledVector(this.dir, -c.airPush);
+    } else {
+      const p = this.pools[W.id].find(q => !q.on);
+      if (p) {
+        this.spreadDir(this.tmpC, c.spread || 0);
+        p.on = true; p.life = c.life; p.dmg = c.damage; p.r = c.projRadius; p.trail = 0;
+        p.vel.copy(this.tmpC).multiplyScalar(c.projSpeed);
+        p.from.copy(cam.position);
+        p.pos.copy(cam.position).addScaledVector(this.dir, 0.6).addScaledVector(this.right, 0.2).addScaledVector(this.up, -0.15);
+        p.m.lookAt(this.tmpA.copy(p.pos).add(p.vel)); p.m.visible = true;
+      }
+    }
+
+    P.recoil += c.recoil * Math.PI / 180;
+    P.addShake(c.shake, c.shakeTime);
+    this.kick = c.kickBack; this.flashT = 0.05; this.lightT = 0.08;
+  }
+
+  explode(pt, zombies) {
+    const c = CONFIG.weapons.rocket, R = c.explosionRadius, P = this.player;
+    this.fx.explosion(pt);
+
+    for (const t of this.targets) {
+      if (!t.alive) continue;
+      const dx = pt.x - Math.max(t.min.x, Math.min(pt.x, t.max.x)), dy = pt.y - Math.max(t.min.y, Math.min(pt.y, t.max.y)),
+            dz = pt.z - Math.max(t.min.z, Math.min(pt.z, t.max.z));
+      const d = Math.hypot(dx, dy, dz);
+      if (d < R) { const dm = Math.round(c.explosionDamage * (1 - d / R)); if (dm > 0) this.damageTarget(t, dm); }
+    }
+
+    for (const z of zombies) {
+      if (!z.alive) continue;
+      const d = z.pos.distanceTo(pt);
+      if (d < R) {
+        const falloff = 1 - d / R;
+        const dm = Math.round(c.explosionDamage * falloff);
+        const pushVec = z.pos.clone().sub(pt);
+        if (pushVec.length() > 1e-4) pushVec.normalize(); else pushVec.set(0, 1, 0);
+        pushVec.multiplyScalar(c.pushEnemy * falloff);
+        if (dm > 0) this.damageZombie(z, dm, false, pushVec);
+      }
+    }
+
+    this.tmpA.set(P.pos.x, P.pos.y + 0.9, P.pos.z).sub(pt);
+    const d = this.tmpA.length();
+    if (d < R) {
+      const f = c.jumpForce * (1 - d / R);
+      if (d > 1e-4) this.tmpA.divideScalar(d); else this.tmpA.set(0, 1, 0);
+      if (this.tmpA.y > 0 && P.vel.y < 0) P.vel.y = 0;
+      P.vel.addScaledVector(this.tmpA, f);
+      if (f * this.tmpA.y > 2) P.onGround = false;
+    }
+    P.addShake(0.05 * Math.max(0, 1 - d / 18), 0.35);
+  }
+
+  updateProjectiles(dt, zombies) {
+    for (const kind in this.pools) for (const p of this.pools[kind]) {
+      if (!p.on) continue;
+      p.life -= dt;
+      if (p.life <= 0) { p.on = false; p.m.visible = false; continue; }
+      this.tmpA.copy(p.pos).addScaledVector(p.vel, dt);
+      this.tmpB.subVectors(this.tmpA, p.from);
+      const len = this.tmpB.length(); this.tmpB.divideScalar(len);
+      const h = this.cast(p.from, this.tmpB, len, p.r, zombies);
+      if (h) {
+        p.on = false; p.m.visible = false;
+        if (kind === "plasma") {
+          if (h.zombie) {
+            const push = p.vel.clone().normalize().multiplyScalar(CONFIG.weapons.plasma.pushEnemy);
+            this.damageZombie(h.zombie, p.dmg, h.isHead, push);
+          } else if (h.target) {
+            this.damageTarget(h.target, p.dmg);
+          } else {
+            this.fx.decal(this.hp, this.hn, 0x1b1340, 0.45);
+          }
+          this.fx.sparks(this.hp, this.hn, 0x7ffcff, 8);
+        } else {
+          if (!h.target && !h.zombie) this.hp.addScaledVector(this.hn, 0.05);
+          this.explode(this.hp, zombies);
+        }
+        continue;
+      }
+      p.from.copy(p.pos); p.pos.copy(this.tmpA);
+      if (kind === "rocket" && (p.trail -= dt) <= 0) {
+        p.trail = 0.03;
+        this.fx.spawn(p.pos.x, p.pos.y, p.pos.z, rnd(0.4), rnd(0.4), rnd(0.4), 0x9a98b8, 0.2, 0.6, 0, 1);
+        this.fx.spawn(p.pos.x, p.pos.y, p.pos.z, rnd(0.3), rnd(0.3), rnd(0.3), 0xff9a2a, 0.12, 0.2, 0, 0);
+      }
+    }
+  }
+
+  updateGloryKill(dt) {
+    if (!this.gloryActive) return;
+    this.gloryTimer += dt;
+    const P = this.player;
+
+    // 1. Быстрый подлёт к врагу за первые 0.15 сек
+    if (this.gloryTimer <= CONFIG.glory.dashDuration) {
+      const t = this.gloryTimer / CONFIG.glory.dashDuration;
+      P.pos.lerpVectors(this.gloryStartPos, this.gloryTargetPos, t);
+      P.vel.set(0, 0, 0);
+    }
+
+    // Смотрим точно на зомби
+    if (this.gloryTarget && this.gloryTarget.alive) {
+      const dx = this.gloryTarget.pos.x - P.pos.x, dz = this.gloryTarget.pos.z - P.pos.z;
+      P.yaw = Math.atan2(-dx, -dz);
+      P.pitch = -0.1;
+    }
+
+    // Анимация удара в зависимости от типа
+    const prog = Math.min(1, this.gloryTimer / this.gloryDuration);
+    if (this.gloryType === "punch") {
+      this.kick = -Math.sin(prog * Math.PI) * 2.8;
+      this.view.position.x = 0.3 - Math.sin(prog * Math.PI) * 0.15;
+    } else if (this.gloryType === "rip") {
+      this.kick = Math.sin(prog * Math.PI * 2) * 1.8;
+      this.view.position.y = -0.27 + Math.sin(prog * Math.PI) * 0.2;
+    } else { // kick
+      this.kick = Math.sin(prog * Math.PI) * 3.5;
+      P.camera.rotation.z = Math.sin(prog * Math.PI) * 0.18;
+    }
+
+    // Момент расправы (на 0.38 сек)
+    if (!this.gloryExecuted && this.gloryTimer >= 0.38) {
+      this.gloryExecuted = true;
+      if (this.gloryTarget && this.gloryTarget.alive) {
+        this.fx.popup(this.gloryTarget.pos.x, this.gloryTarget.pos.y + 2.2, this.gloryTarget.pos.z, "ДОБИВАНИЕ!", true);
+        const push = new THREE.Vector3(0, 4, -20).applyAxisAngle(new THREE.Vector3(0, 1, 0), P.yaw);
+        this.gloryTarget.die(true, push, this.fx, this.game, true, true);
+        P.addShake(0.06, 0.3);
+      }
+    }
+
+    // Завершение добивания
+    if (this.gloryTimer >= this.gloryDuration) {
+      this.gloryActive = false;
+      this.gloryTarget = null;
+      this.game.timeScale = 1.0;
+      this.ui.gloryVignette.style.opacity = "0";
+      this.view.position.set(0.3, -0.27, -0.5);
+      P.camera.rotation.z = 0;
+    }
+  }
+
+  updateView(dt) {
+    const P = this.player, g = this.view;
+    this.appear = Math.min(1, this.appear + dt / 0.25);
+    this.kick *= Math.exp(-14 * dt);
+    const sp = P.onGround ? Math.min(1, Math.hypot(P.vel.x, P.vel.z) / CONFIG.moveSpeed) : 0;
+    this.bobA += (sp - this.bobA) * Math.min(1, dt * 10); this.bobT += dt * 10 * sp;
+    const e = 1 - Math.pow(1 - this.appear, 3);
+
+    const dashK = P.dashTimer > 0 ? (P.dashTimer / CONFIG.dashDuration) : 0;
+    const dashTilt = dashK * 0.2;
+    const switchTilt = (1 - e) * 0.35;
+
+    if (!this.gloryActive) {
+      g.position.set(
+        0.3 + Math.sin(this.bobT) * 0.014 * this.bobA,
+        -0.27 + Math.abs(Math.cos(this.bobT)) * 0.012 * this.bobA - (1 - e) * 0.45,
+        -0.5 + this.kick * 0.12
+      );
+      g.rotation.set(
+        -(1 - e) * 0.7 + this.kick * 0.18,
+        Math.sin(this.bobT * 0.5) * 0.018 * this.bobA + switchTilt,
+        -switchTilt * 0.7 - dashTilt
+      );
+    }
+
+    if (this.cur.id === "plasma" && this.models.plasma.userData.core) {
+      const core = this.models.plasma.userData.core;
+      const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.01);
+      core.scale.setScalar(0.9 + 0.25 * pulse);
+      core.material.emissiveIntensity = 0.6 + 0.6 * pulse;
+    }
+
+    if (this.cur.id === "rocket") {
+      this.smokeT = (this.smokeT || 0) - dt;
+      if (this.smokeT <= 0) {
+        this.smokeT = 0.09;
+        this.camera.getWorldDirection(this.dir);
+        this.right.set(1, 0, 0).applyQuaternion(this.camera.quaternion);
+        this.up.set(0, 1, 0).applyQuaternion(this.camera.quaternion);
+        const rearPos = this.tmpA.copy(this.camera.position)
+          .addScaledVector(this.dir, 0.15)
+          .addScaledVector(this.right, 0.35)
+          .addScaledVector(this.up, -0.22);
+        this.fx.spawn(
+          rearPos.x, rearPos.y, rearPos.z,
+          rnd(0.12) - this.dir.x * 0.6,
+          rnd(0.12) + 0.25 - this.dir.y * 0.6,
+          rnd(0.12) - this.dir.z * 0.6,
+          0xb8b6c8, 0.13, 0.45, -0.4, 0.9
+        );
+      }
+    }
+
+    this.flashT = Math.max(0, this.flashT - dt); this.lightT = Math.max(0, this.lightT - dt);
+    this.models[this.cur.id].userData.flash.visible = this.flashT > 0;
+    this.camera.getWorldDirection(this.dir);
+    this.right.set(1, 0, 0).applyQuaternion(this.camera.quaternion);
+    this.up.set(0, 1, 0).applyQuaternion(this.camera.quaternion);
+    this.mLight.position.copy(this.camera.position).addScaledVector(this.dir, 0.9).addScaledVector(this.right, 0.3).addScaledVector(this.up, -0.2);
+    this.mLight.intensity = 3 * this.lightT / 0.08;
+  }
+
+  updateHud(dt) {
+    if (this.hitT > 0) {
+      this.hitT -= dt;
+      this.ui.hit.style.opacity = Math.max(0, this.hitT / 0.18);
+      this.ui.hit.classList.toggle("kill", this.hitKill);
+    }
+    const txt = this.cur.ammo + " / " + this.cur.cfg.maxAmmo;
+    if (txt !== this.ammoText) { this.ammoText = txt; this.ui.ammo.innerHTML = this.cur.ammo + " <small>/ " + this.cur.cfg.maxAmmo + "</small>"; }
+
+    const P = this.player;
+    this.ui.hpVal.textContent = Math.round(P.health);
+    this.ui.hpFill.style.width = Math.max(0, (P.health / P.maxHealth) * 100) + "%";
+    this.ui.apVal.textContent = Math.round(P.armor);
+    this.ui.apFill.style.width = Math.max(0, (P.armor / P.maxArmor) * 100) + "%";
+
+    const isLowHp = P.health > 0 && P.health < 25;
+    this.ui.vignette.classList.toggle("low-hp", isLowHp);
+    if (P.vignetteT > 0) {
+      this.ui.vignette.style.opacity = Math.min(1, P.vignetteT / 0.25);
+    } else if (!isLowHp) {
+      this.ui.vignette.style.opacity = "0";
+    }
+
+    if (P.dmgIndicatorT > 0) {
+      const dx = P.dmgSourcePos.x - P.pos.x, dz = P.dmgSourcePos.z - P.pos.z;
+      const angleToSource = Math.atan2(dx, dz);
+      const relAngle = angleToSource - P.yaw;
+      this.ui.dmgArc.style.transform = "rotate(" + (-relAngle) + "rad)";
+      this.ui.dmgIndicator.style.opacity = Math.min(1, P.dmgIndicatorT / 0.4);
+    } else {
+      this.ui.dmgIndicator.style.opacity = "0";
+    }
+  }
+
+  update(dt, zombies) {
+    const W = this.cur;
+    for (const w of this.weapons) w.cool = Math.max(0, w.cool - dt);
+    this.switchT = Math.max(0, this.switchT - dt);
+    if (!this.player.isDead && !this.gloryActive && this.mouseDown && W.cool <= 0 && this.switchT <= 0 && W.ammo > 0) {
+      this.fire(W, zombies);
+    }
+    this.updateProjectiles(dt, zombies);
+    this.updateGloryKill(dt);
+    this.fx.update(dt);
+    for (const t of this.targets) t.update(dt);
+    this.updateView(dt);
+    this.updateHud(dt);
+  }
+
+  resize() { this.wCam.aspect = innerWidth / innerHeight; this.wCam.updateProjectionMatrix(); }
+
+  render(r) {
+    r.clear(); r.render(this.scene, this.camera);
+    r.clearDepth(); r.render(this.wScene, this.wCam);
+  }
+}
+
+/* ===================== МЕНЕДЖЕР ИГРЫ, ВОЛН И ПРЕДМЕТОВ ===================== */
+class Game {
+  constructor() {
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setSize(innerWidth, innerHeight);
+    document.body.prepend(this.renderer.domElement);
+
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(CONFIG.fov, innerWidth / innerHeight, 0.1, 200);
+    this.world = new World(this.scene);
+    this.player = new Player(this.camera);
+    this.renderer.autoClear = false;
+    this.combat = new Combat(this.scene, this.camera, this.world, this.player, this);
+
+    this.zombies = [];
+    this.pickups = [];
+    this.wave = 1;
+    this.kills = 0;
+    this.gloryKills = 0;
+    this.score = 0;
+    this.waveDelay = 0;
+    this.wavePending = false;
+    this.killsSinceQuote = 0;
+    this.timeScale = 1.0;
+
+    this.keys = {};
+    this.running = false;
+    this.clock = new THREE.Clock();
+    this.frames = 0; this.fpsTime = 0;
+    this.quoteTimer = 0;
+    this.flashTimer = 0;
+
+    this.el = {
+      overlay: document.getElementById("overlay"),
+      title: document.getElementById("title"),
+      deathScreen: document.getElementById("deathScreen"),
+      deathStats: document.getElementById("deathStats"),
+      restartBtn: document.getElementById("restartBtn"),
+      dash: document.getElementById("dash"),
+      dashFill: document.getElementById("dashFill"),
+      dashLabel: document.getElementById("dashLabel"),
+      fps: document.getElementById("fps"),
+      waveBadge: document.getElementById("waveBadge"),
+      killsBadge: document.getElementById("killsBadge"),
+      scoreBadge: document.getElementById("scoreBadge"),
+      waveBanner: document.getElementById("waveBanner"),
+      quoteBox: document.getElementById("quoteBox"),
+      pickupFlash: document.getElementById("pickupFlash")
+    };
+
+    this.bind();
+    this.spawnStartPickups();
+    this.spawnWave(6);
+    this.loop();
+  }
+
+  bind() {
+    const canvas = this.renderer.domElement;
+    this.el.overlay.addEventListener("click", () => canvas.requestPointerLock());
+
+    this.el.restartBtn.addEventListener("click", () => {
+      this.restartGame();
+      canvas.requestPointerLock();
+    });
+
+    document.addEventListener("pointerlockchange", () => {
+      this.running = document.pointerLockElement === canvas;
+      if (this.player.isDead) {
+        this.el.overlay.classList.add("hidden");
+        return;
+      }
+      this.el.overlay.classList.toggle("hidden", this.running);
+      this.combat.mouseDown = false;
+      if (this.running) this.clock.getDelta();
+      else { this.keys = {}; this.el.title.textContent = "Пауза — нажми, чтобы продолжить"; }
+    });
+
+    document.addEventListener("mousemove", e => {
+      if (this.running && !this.player.isDead && !this.combat.gloryActive) {
+        this.player.look(e.movementX, e.movementY);
+      }
+    });
+
+    document.addEventListener("keydown", e => {
+      if (this.player.isDead) {
+        if (e.code === "KeyR") this.restartGame();
+        return;
+      }
+      if (!this.running) return;
+      if (this.combat.gloryActive) return;
+
+      if (e.code === "Space") { e.preventDefault(); if (!e.repeat) this.player.jumpQueued = true; }
+      else if (e.code === "ShiftLeft" || e.code === "ShiftRight") { if (!e.repeat) this.player.dashQueued = true; }
+      else if (e.code === "KeyE") { if (!e.repeat) this.combat.tryGloryKill(this.zombies); }
+      else if (/^Digit[1-3]$/.test(e.code)) this.combat.select(+e.code[5] - 1);
+      else if (e.code === "KeyR") this.combat.refill();
+      else if (e.code === "KeyT") this.spawnZombie();
+      else this.keys[e.code] = true;
+    });
+
+    document.addEventListener("keyup", e => { this.keys[e.code] = false; });
+    document.addEventListener("mousedown", e => {
+      if (this.player.isDead || this.combat.gloryActive) return;
+      if (this.running && e.button === 0) this.combat.mouseDown = true;
+    });
+    document.addEventListener("mouseup", e => { if (e.button === 0) this.combat.mouseDown = false; });
+    document.addEventListener("wheel", e => {
+      if (this.running && !this.player.isDead && !this.combat.gloryActive) {
+        this.combat.cycle(Math.sign(e.deltaY));
+      }
+    }, { passive: true });
+
+    window.addEventListener("resize", () => {
+      this.combat.resize();
+      this.camera.aspect = innerWidth / innerHeight;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(innerWidth, innerHeight);
+    });
+  }
+
+  triggerFlash(color) {
+    this.el.pickupFlash.className = color;
+    this.el.pickupFlash.style.opacity = "1";
+    this.flashTimer = 0.22;
+  }
+
+  sayQuote(category) {
+    if (this.quoteTimer > 0) return;
+    this.quoteTimer = 4.0;
+    const list = CONFIG.quotes[category + "Quotes"] || CONFIG.quotes.killQuotes;
+    const txt = list[Math.floor(Math.random() * list.length)];
+    this.el.quoteBox.textContent = "Вася: " + txt;
+    this.el.quoteBox.classList.add("show");
+    setTimeout(() => this.el.quoteBox.classList.remove("show"), 1500);
+  }
+
+  showWaveBanner(text) {
+    this.el.waveBanner.textContent = text;
+    this.el.waveBanner.classList.add("show");
+    setTimeout(() => this.el.waveBanner.classList.remove("show"), 2000);
+  }
+
+  onZombieKill(points, isHeadshot, isGloryKill = false) {
+    this.kills++;
+    if (isGloryKill) this.gloryKills++;
+    this.score += points;
+    this.killsSinceQuote++;
+    if (this.killsSinceQuote >= 3) {
+      this.killsSinceQuote = 0;
+      this.sayQuote("kill");
+    }
+    this.el.killsBadge.textContent = "УБИТО: " + this.kills + " | ДОБИТО: " + this.gloryKills;
+    this.el.scoreBadge.textContent = "СЧЁТ: " + this.score;
+  }
+
+  // Спавн предметов при смерти зомби
+  spawnDrops(pos, isGloryKill, wasStunned) {
+    const addP = (type, vx, vy, vz) => {
+      if (this.pickups.length >= CONFIG.pickups.maxActive) {
+        const oldest = this.pickups.shift();
+        oldest.destroy();
+      }
+      const p = new Pickup(this.scene, type, pos.x, pos.y + 0.8, pos.z, new THREE.Vector3(vx, vy, vz));
+      this.pickups.push(p);
+    };
+
+    if (isGloryKill) {
+      // При добивании: 2 аптечки, 1 патроны (где меньше всего запас) и 40% броня
+      addP("medkit", -1.2, 4.2, rnd(1));
+      addP("medkit", 1.2, 4.2, rnd(1));
+
+      // Находим оружие с наименьшим % патронов
+      const wpns = this.combat.weapons;
+      let minRatio = wpns[0].ammo / wpns[0].cfg.maxAmmo;
+      let minType = "ammo_shotgun";
+      if (wpns[1].ammo / wpns[1].cfg.maxAmmo < minRatio) {
+        minRatio = wpns[1].ammo / wpns[1].cfg.maxAmmo;
+        minType = "ammo_plasma";
+      }
+      if (wpns[2].ammo / wpns[2].cfg.maxAmmo < minRatio) {
+        minType = "ammo_rocket";
+      }
+      addP(minType, rnd(1), 4.5, -1.2);
+
+      if (Math.random() < CONFIG.drops.gloryArmorChance) {
+        addP("armor", rnd(1), 4.8, 1.2);
+      }
+    } else {
+      const chance = wasStunned ? CONFIG.drops.stunnedKillChance : CONFIG.drops.normalAmmoChance;
+      if (Math.random() < chance) {
+        const ammoTypes = ["ammo_shotgun", "ammo_plasma", "ammo_rocket"];
+        addP(ammoTypes[Math.floor(Math.random() * ammoTypes.length)], rnd(1.2), 3.8, rnd(1.2));
+      }
+      const hpChance = wasStunned ? 0.25 : CONFIG.drops.normalHpChance;
+      if (Math.random() < hpChance) {
+        addP("medkit", rnd(1.2), 3.8, rnd(1.2));
+      }
+    }
+  }
+
+  spawnStartPickups() {
+    // 4 аптечки
+    const medCoords = [[-10, 0, -8], [4, 3, -12], [12, 0, 2], [-4, 2, -12]];
+    for (const c of medCoords) {
+      const p = new Pickup(this.scene, "medkit", c[0], c[1], c[2], new THREE.Vector3(0, 0, 0));
+      p.hovering = true; p.hoverBaseY = c[1] + 0.35;
+      this.pickups.push(p);
+    }
+    // 2 брони
+    const armorCoords = [[0, 1.8, -2], [12, 4.5, -8]];
+    for (const c of armorCoords) {
+      const p = new Pickup(this.scene, "armor", c[0], c[1], c[2], new THREE.Vector3(0, 0, 0));
+      p.hovering = true; p.hoverBaseY = c[1] + 0.35;
+      this.pickups.push(p);
+    }
+    // Патроны дробовика (2)
+    const sgCoords = [[-12, 2.5, 6], [0, 0, 8]];
+    for (const c of sgCoords) {
+      const p = new Pickup(this.scene, "ammo_shotgun", c[0], c[1], c[2], new THREE.Vector3(0, 0, 0));
+      p.hovering = true; p.hoverBaseY = c[1] + 0.35;
+      this.pickups.push(p);
+    }
+    // Патроны плазмы (2)
+    const plCoords = [[-10, 1, -8], [14, 0, -14]];
+    for (const c of plCoords) {
+      const p = new Pickup(this.scene, "ammo_plasma", c[0], c[1], c[2], new THREE.Vector3(0, 0, 0));
+      p.hovering = true; p.hoverBaseY = c[1] + 0.35;
+      this.pickups.push(p);
+    }
+    // Патроны ракет (2)
+    const rkCoords = [[4, 0, -6], [-14, 0, 12]];
+    for (const c of rkCoords) {
+      const p = new Pickup(this.scene, "ammo_rocket", c[0], c[1], c[2], new THREE.Vector3(0, 0, 0));
+      p.hovering = true; p.hoverBaseY = c[1] + 0.35;
+      this.pickups.push(p);
+    }
+  }
+
+  onPlayerDeath() {
+    this.el.deathStats.innerHTML =
+      "Волна: " + this.wave + "<br>Убито зомби: " + this.kills +
+      "<br>Добиваний (Glory): " + this.gloryKills + "<br>Общий счёт: " + this.score;
+    this.el.deathScreen.classList.add("active");
+  }
+
+  restartGame() {
+    for (const z of this.zombies) z.destroy();
+    for (const p of this.pickups) p.destroy();
+    this.zombies = [];
+    this.pickups = [];
+    this.wave = 1;
+    this.kills = 0;
+    this.gloryKills = 0;
+    this.score = 0;
+    this.waveDelay = 0;
+    this.wavePending = false;
+    this.timeScale = 1.0;
+    this.player.reset();
+    this.combat.refill();
+    this.combat.gloryActive = false;
+    this.el.deathScreen.classList.remove("active");
+    this.el.waveBadge.textContent = "ВОЛНА: 1";
+    this.el.killsBadge.textContent = "УБИТО: 0 | ДОБИТО: 0";
+    this.el.scoreBadge.textContent = "СЧЁТ: 0";
+    this.spawnStartPickups();
+    this.spawnWave(6);
+  }
+
+  findSpawnPoint() {
+    const half = CONFIG.roomSize / 2 - 3;
+    for (let attempts = 0; attempts < 40; attempts++) {
+      const rx = (Math.random() - 0.5) * 2 * half;
+      const rz = (Math.random() - 0.5) * 2 * half;
+      const dist = Math.hypot(rx - this.player.pos.x, rz - this.player.pos.z);
+      if (dist < 12) continue;
+
+      let inBox = false;
+      for (const b of this.world.boxes) {
+        if (rx >= b.min.x - 0.8 && rx <= b.max.x + 0.8 &&
+            rz >= b.min.z - 0.8 && rz <= b.max.z + 0.8) {
+          inBox = true; break;
+        }
+      }
+      if (!inBox) return { x: rx, y: 0, z: rz };
+    }
+    return { x: 12, y: 0, z: -12 };
+  }
+
+  spawnZombie() {
+    const pt = this.findSpawnPoint();
+    const z = new Zombie(this.scene, pt.x, pt.y, pt.z);
+    this.zombies.push(z);
+  }
+
+  spawnWave(count) {
+    this.showWaveBanner("ВОЛНА " + this.wave);
+    this.el.waveBadge.textContent = "ВОЛНА: " + this.wave;
+    for (let i = 0; i < count; i++) {
+      this.spawnZombie();
+    }
+  }
+
+  updateWaves(dt) {
+    const aliveCount = this.zombies.filter(z => z.alive).length;
+    if (aliveCount === 0 && !this.wavePending && !this.player.isDead) {
+      this.wavePending = true;
+      this.waveDelay = 3.0;
+      this.showWaveBanner("ВОЛНА ЗАЧИЩЕНА!");
+    }
+
+    if (this.wavePending) {
+      this.waveDelay -= dt;
+      if (this.waveDelay <= 0) {
+        this.wavePending = false;
+        this.wave++;
+        for (const z of this.zombies) z.destroy();
+        this.zombies = [];
+        const nextCount = Math.min(20, 6 + (this.wave - 1) * 3);
+        this.spawnWave(nextCount);
+      }
+    }
+  }
+
+  updateHud(dt) {
+    const cd = this.player.dashCd, ready = cd <= 0;
+    this.el.dashFill.style.width = (ready ? 100 : (1 - cd / CONFIG.dashCooldown) * 100) + "%";
+    this.el.dash.classList.toggle("charging", !ready);
+    this.el.dashLabel.textContent = ready ? "Рывок готов" : "Рывок: " + cd.toFixed(1) + " с";
+
+    this.frames++; this.fpsTime += dt;
+    if (this.fpsTime >= 0.5) {
+      this.el.fps.textContent = "FPS: " + Math.round(this.frames / this.fpsTime);
+      this.frames = 0; this.fpsTime = 0;
+    }
+
+    if (this.quoteTimer > 0) this.quoteTimer -= dt;
+
+    if (this.flashTimer > 0) {
+      this.flashTimer -= dt;
+      if (this.flashTimer <= 0) {
+        this.el.pickupFlash.style.opacity = "0";
+      }
+    }
+  }
+
+  loop() {
+    requestAnimationFrame(() => this.loop());
+    const rawDt = Math.min(this.clock.getDelta(), 0.05);
+    const dt = rawDt * this.timeScale;
+
+    if (this.running || this.player.isDead) {
+      this.player.update(dt, this.keys, this.world, this.combat.gloryActive);
+
+      for (const z of this.zombies) {
+        z.update(dt, this.player, this.world, this.zombies, this, this.combat.fx);
+      }
+
+      for (let i = this.pickups.length - 1; i >= 0; i--) {
+        const p = this.pickups[i];
+        p.update(dt, this.player, this, this.combat.fx);
+        if (!p.alive) this.pickups.splice(i, 1);
+      }
+
+      this.combat.update(dt, this.zombies);
+      this.updateWaves(dt);
+      this.updateHud(rawDt);
+    }
+    this.combat.render(this.renderer);
+  }
+}
+
+new Game();
+</script>
+</body>
+</html>
